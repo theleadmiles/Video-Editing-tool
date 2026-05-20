@@ -56,7 +56,7 @@ export async function POST(
     const langCode = ASSEMBLYAI_CODES[languageName];
     const submitBody: Record<string, unknown> = {
       audio_url:    audioUrl,
-      speech_model: "universal-2",   // required by AssemblyAI's current API
+      speech_models: ["universal-2"], // AssemblyAI current API — plural, array
     };
     if (langCode) {
       submitBody.language_code = langCode;
