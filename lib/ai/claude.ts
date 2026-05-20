@@ -1,8 +1,9 @@
-import Anthropic from "@anthropic-ai/sdk";
+/**
+ * Script generation — routes through OpenRouter.
+ * Model is set by OR_MODEL (default: anthropic/claude-3.5-sonnet).
+ */
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-});
+import { openrouter, OR_MODEL } from "./openrouter";
 
 export interface ScriptOutput {
   title: string;
@@ -42,17 +43,11 @@ export async function generateScript(
 ): Promise<ScriptOutput> {
   const wordCount = Math.round((durationSeconds / 60) * 140);
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
+  const completion = await openrouter.chat.completions.create({
+    model: OR_MODEL,
     max_tokens: 1024,
-    system: [
-      {
-        type: "text" as const,
-        text: SCRIPT_SYSTEM_PROMPT,
-        cache_control: { type: "ephemeral" as const },
-      },
-    ],
     messages: [
+      { role: "system", content: SCRIPT_SYSTEM_PROMPT },
       {
         role: "user",
         content: `Write a ${durationSeconds}-second video script about: "${topic}"
@@ -66,11 +61,9 @@ Important: Return ONLY the JSON object, no other text.`,
     ],
   });
 
-  const content = message.content[0];
-  if (content.type !== "text") throw new Error("Unexpected response from Claude");
-
-  const jsonMatch = content.text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("No JSON found in Claude response");
+  const text = completion.choices[0]?.message?.content ?? "";
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("No JSON found in AI response");
 
   return JSON.parse(jsonMatch[0]) as ScriptOutput;
 }

@@ -20,12 +20,14 @@ import {
   Library,
   Mic2,
   Film,
+  Captions,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/projects", icon: FolderOpen, label: "Projects" },
+  { href: "/projects/caption", icon: Captions, label: "Caption Video" },
   { href: "/renders", icon: Film, label: "Renders" },
   { href: "/assets", icon: Library, label: "Assets" },
   { href: "/templates", icon: LayoutTemplate, label: "Templates" },

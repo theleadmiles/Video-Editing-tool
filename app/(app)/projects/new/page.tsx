@@ -13,6 +13,7 @@ import {
   ChevronRight, ChevronLeft, Zap,
   Mic2, Music2, Clock, Ratio,
   CheckCircle2, AlertTriangle, Play, Square, Globe,
+  Captions,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Confetti } from "@/components/shared/confetti";
@@ -20,10 +21,11 @@ import { Confetti } from "@/components/shared/confetti";
 type InputMode = "topic" | "script" | "upload" | "url";
 type Step = 1 | 2 | 3;
 
+// "upload" mode navigates away to /projects/caption — it's handled specially below
 const INPUT_MODES = [
   { id: "topic", icon: Sparkles, label: "Topic / Idea", desc: "Type a topic — AI writes everything" },
   { id: "script", icon: FileText, label: "My Script", desc: "Paste your own script" },
-  { id: "upload", icon: Upload, label: "Upload footage", desc: "AI edits your raw video" },
+  { id: "upload", icon: Captions, label: "Caption my video", desc: "Upload your video, AI adds captions" },
   { id: "url", icon: Link2, label: "URL / Link", desc: "YouTube, blog post, article" },
 ];
 
@@ -488,22 +490,33 @@ function NewProjectContent() {
               </div>
             </div>
 
-            <Button
-              className="w-full"
-              size="lg"
-              loading={urlFetching}
-              onClick={async () => {
-                if (!topic.trim()) { toast.error("Please enter a topic first"); return; }
-                if (inputMode === "url") {
-                  const ok = await fetchUrlContent();
-                  if (!ok) return;
-                }
-                setStep(2);
-              }}
-            >
-              {inputMode === "url" && !urlFetching ? "Fetch & Continue" : "Continue"}
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+            {inputMode === "upload" ? (
+              <Button
+                className="w-full"
+                size="lg"
+                onClick={() => router.push("/projects/caption")}
+              >
+                <Captions className="h-4 w-4" />
+                Go to caption upload
+              </Button>
+            ) : (
+              <Button
+                className="w-full"
+                size="lg"
+                loading={urlFetching}
+                onClick={async () => {
+                  if (!topic.trim()) { toast.error("Please enter a topic first"); return; }
+                  if (inputMode === "url") {
+                    const ok = await fetchUrlContent();
+                    if (!ok) return;
+                  }
+                  setStep(2);
+                }}
+              >
+                {inputMode === "url" && !urlFetching ? "Fetch & Continue" : "Continue"}
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         )}
 

@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { openrouter, OR_MODEL } from "@/lib/ai/openrouter";
 import type { TimelineClip, TimelineData } from "@/types";
 
 export const maxDuration = 60;
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
 const TRANSLATION_SYSTEM_PROMPT = `You are a professional video caption translator for short-form social media content (Reels, Shorts, TikTok). Your job is to translate caption lines from English to a target language.
 
@@ -63,17 +61,11 @@ export async function POST(
   const captionTexts = captionTrack.clips.map((c) => String(c.text || ""));
 
   try {
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
+    const completion = await openrouter.chat.completions.create({
+      model: OR_MODEL,
       max_tokens: 4096,
-      system: [
-        {
-          type: "text" as const,
-          text: TRANSLATION_SYSTEM_PROMPT,
-          cache_control: { type: "ephemeral" as const },
-        },
-      ],
       messages: [
+        { role: "system", content: TRANSLATION_SYSTEM_PROMPT },
         {
           role: "user",
           content: `Translate the following English captions into ${targetLanguage}.
@@ -86,12 +78,11 @@ Return ONLY the JSON array of translated strings.`,
       ],
     });
 
-    const content = message.content[0];
-    if (content.type !== "text") throw new Error("Unexpected Claude response");
+    const text = completion.choices[0]?.message?.content ?? "";
 
     // Extract JSON array
-    const jsonMatch = content.text.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) throw new Error("No JSON array in Claude response");
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) throw new Error("No JSON array in AI response");
     const translated = JSON.parse(jsonMatch[0]) as string[];
 
     if (!Array.isArray(translated) || translated.length !== captionTexts.length) {
@@ -121,7 +112,6 @@ Return ONLY the JSON array of translated strings.`,
       target_language: targetLanguage,
       caption_count: translated.length,
       timeline_data: updatedTimeline,
-      cache_read_input_tokens: message.usage?.cache_read_input_tokens || 0,
     });
   } catch (err) {
     console.error("Translation error:", err);

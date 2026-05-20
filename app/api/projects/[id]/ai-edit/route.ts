@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import Anthropic from "@anthropic-ai/sdk";
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+import { openrouter, OR_MODEL } from "@/lib/ai/openrouter";
 
 export async function POST(
   req: NextRequest,
@@ -26,8 +24,8 @@ export async function POST(
     return NextResponse.json({ error: "No script found" }, { status: 400 });
   }
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
+  const completion = await openrouter.chat.completions.create({
+    model: OR_MODEL,
     max_tokens: 1024,
     messages: [
       {
@@ -46,10 +44,10 @@ Rewrite the script applying the instruction precisely. Keep a similar length and
     ],
   });
 
-  const content = message.content[0];
-  if (content.type !== "text") {
+  const improved = completion.choices[0]?.message?.content?.trim() ?? "";
+  if (!improved) {
     return NextResponse.json({ error: "Unexpected AI response" }, { status: 500 });
   }
 
-  return NextResponse.json({ improvedScript: content.text.trim() });
+  return NextResponse.json({ improvedScript: improved });
 }

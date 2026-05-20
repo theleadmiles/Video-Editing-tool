@@ -11,12 +11,13 @@ import { toast } from "sonner";
 import {
   LayoutDashboard, FolderOpen, LayoutTemplate,
   Palette, Settings, LogOut, Zap, Plus,
-  Menu, X, Shield, Library, Mic2, Film,
+  Menu, X, Shield, Library, Mic2, Film, Captions,
 } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/projects", icon: FolderOpen, label: "Projects" },
+  { href: "/projects/caption", icon: Captions, label: "Caption Video" },
   { href: "/renders", icon: Film, label: "Renders" },
   { href: "/assets", icon: Library, label: "Assets" },
   { href: "/templates", icon: LayoutTemplate, label: "Templates" },
