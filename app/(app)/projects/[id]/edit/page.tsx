@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ProjectEditor } from "@/components/editor/project-editor";
 import { MobileEditorBlocker } from "@/components/editor/mobile-editor-blocker";
+import { ProcessingScreen } from "@/components/editor/processing-screen";
 
 export default async function EditProjectPage({
   params,
@@ -18,6 +19,11 @@ export default async function EditProjectPage({
     .single();
 
   if (!project) notFound();
+
+  // Show a polling screen while transcription runs in the background
+  if (project.status === "processing" || project.status === "error") {
+    return <ProcessingScreen project={project} />;
+  }
 
   return (
     <>

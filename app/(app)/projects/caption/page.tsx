@@ -242,11 +242,12 @@ export default function CaptionPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Transcription failed");
 
-      setCaptionCount(data.captionCount ?? 0);
+      // Server returns immediately — transcription runs in the background.
+      // The editor page will poll until it's ready.
       setStage("done");
       window.removeEventListener("beforeunload", handleBeforeUnload);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      setTimeout(() => router.push(`/projects/${data.projectId}/edit`), 1200);
+      setTimeout(() => router.push(`/projects/${data.projectId}/edit`), 800);
 
     } catch (err) {
       window.removeEventListener("beforeunload", handleBeforeUnload);
@@ -287,18 +288,13 @@ export default function CaptionPage() {
               : <Loader2 className="h-10 w-10 text-gold-500 animate-spin" />}
           </div>
           <h2 className="font-display text-2xl font-bold text-white mb-1">
-            {stage === "done" ? "Captions ready!" : "Working on it…"}
+            {stage === "done" ? "Opening editor…" : "Working on it…"}
           </h2>
-          <p className="text-sm text-subtle mb-2">
+          <p className="text-sm text-subtle mb-6">
             {stage === "done"
-              ? "Opening your editor…"
-              : "Hang tight — this takes 15–60 seconds depending on video length."}
+              ? "Transcription is running in the background — the editor will update automatically."
+              : "Uploading your files…"}
           </p>
-          {stage !== "done" && (
-            <p className="text-xs text-amber-400/80 mb-6 flex items-center justify-center gap-1.5">
-              <span>⚠️</span> Keep this tab open until it finishes
-            </p>
-          )}
 
           <div className="space-y-2.5">
             {steps.map((s, i) => {
