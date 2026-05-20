@@ -145,6 +145,21 @@ export default function CaptionPage() {
   async function handleSubmit() {
     if (!file) { toast.error("Please select a video first"); return; }
 
+    // Warn if user tries to leave while processing
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    // Warn if user switches tabs during transcription
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        toast.warning("⚠️ Don't switch tabs — transcription will fail if you leave this page.", { duration: 6000 });
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     try {
       // ── Stage 1: Extract audio ────────────────────────────────────────────
       setStage("extracting");
@@ -221,11 +236,22 @@ export default function CaptionPage() {
 
       setCaptionCount(data.captionCount ?? 0);
       setStage("done");
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       setTimeout(() => router.push(`/projects/${data.projectId}/edit`), 1200);
 
     } catch (err) {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       setStage("idle");
-      toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      const msg = err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      const isConnectionError = msg.toLowerCase().includes("failed to fetch") || msg.toLowerCase().includes("network") || msg.toLowerCase().includes("connection");
+      toast.error(
+        isConnectionError
+          ? "Connection lost — this usually happens when you switch tabs during transcription. Please try again and keep this tab open."
+          : msg,
+        { duration: 8000 }
+      );
     }
   }
 
@@ -255,11 +281,16 @@ export default function CaptionPage() {
           <h2 className="font-display text-2xl font-bold text-white mb-1">
             {stage === "done" ? "Captions ready!" : "Working on it…"}
           </h2>
-          <p className="text-sm text-subtle mb-8">
+          <p className="text-sm text-subtle mb-2">
             {stage === "done"
               ? "Opening your editor…"
               : "Hang tight — this takes 15–60 seconds depending on video length."}
           </p>
+          {stage !== "done" && (
+            <p className="text-xs text-amber-400/80 mb-6 flex items-center justify-center gap-1.5">
+              <span>⚠️</span> Keep this tab open until it finishes
+            </p>
+          )}
 
           <div className="space-y-2.5">
             {steps.map((s, i) => {
