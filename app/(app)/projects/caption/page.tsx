@@ -39,7 +39,7 @@ const ACCEPTED_TYPES = [
   "video/mp4", "video/quicktime", "video/webm", "video/x-matroska",
 ];
 const ACCEPTED_EXT = ".mp4,.mov,.webm,.mkv";
-const MAX_SIZE_BYTES = 200 * 1024 * 1024; // 200 MB
+const MAX_SIZE_BYTES = 1024 * 1024 * 1024; // 1 GB
 
 // ── Audio extraction ──────────────────────────────────────────────────────────
 
@@ -361,7 +361,7 @@ export default function CaptionPage() {
                     {isDragging ? "Drop it here" : "Drop your video here"}
                   </p>
                   <p className="mt-1 text-xs text-muted">or click to browse</p>
-                  <p className="mt-3 text-[11px] text-muted">MP4, MOV, WebM · up to 200 MB</p>
+                  <p className="mt-3 text-[11px] text-muted">MP4, MOV, WebM · up to 1 GB · auto-deleted after 30 days</p>
                 </>
               )}
             </div>

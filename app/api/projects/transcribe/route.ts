@@ -128,7 +128,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: projectError?.message ?? "Failed to create project" }, { status: 500 });
   }
 
-  // ── Record asset row ───────────────────────────────────────────────────────
+  // ── Record asset row (with 30-day expiry for storage cleanup) ────────────────
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 30);
+
   await supabase.from("assets").insert({
     workspace_id:     workspace.id,
     type:             "video",
@@ -136,8 +139,10 @@ export async function POST(req: NextRequest) {
     url:              videoUrl,
     duration_seconds: Math.ceil(totalDuration),
     metadata: {
-      project_id: project.id,
-      mime_type:  "video/*",
+      project_id:  project.id,
+      mime_type:   "video/*",
+      kind:        "caption_source",
+      expires_at:  expiresAt.toISOString(),
     },
   });
 
