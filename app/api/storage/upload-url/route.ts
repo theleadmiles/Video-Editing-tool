@@ -1,14 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 /**
  * POST /api/storage/upload-url
- * Returns a signed upload URL so the browser can upload large files
- * directly to Supabase Storage — completely bypassing Vercel's body limit.
+ * Returns a presigned PUT URL so the browser can upload large video files
+ * directly to Cloudflare R2 — no Vercel body limit, no Supabase 50 MB cap.
  *
  * Body: { filename: string, content_type: string }
- * Returns: { signed_url, path, token, public_url }
+ * Returns: { signed_url, public_url }
  */
+
+function r2Client() {
+  return new S3Client({
+    region: "auto",
+    endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId:     process.env.CLOUDFLARE_R2_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY!,
+    },
+  });
+}
+
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -24,23 +38,20 @@ export async function POST(req: NextRequest) {
   const { filename, content_type } = await req.json();
   if (!filename) return NextResponse.json({ error: "filename required" }, { status: 400 });
 
-  const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
-  const path = `${workspace.id}/videos/${Date.now()}-${safe}`;
+  const safe   = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
+  const key    = `${workspace.id}/videos/${Date.now()}-${safe}`;
+  const bucket = process.env.CLOUDFLARE_R2_BUCKET_NAME!;
 
-  const { data, error } = await supabase.storage
-    .from("assets")
-    .createSignedUploadUrl(path);
+  try {
+    const command   = new PutObjectCommand({ Bucket: bucket, Key: key, ContentType: content_type });
+    const signedUrl = await getSignedUrl(r2Client(), command, { expiresIn: 3600 });
+    const publicUrl = `${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}/${key}`;
 
-  if (error || !data) {
-    return NextResponse.json({ error: error?.message ?? "Could not create upload URL" }, { status: 500 });
+    return NextResponse.json({ signed_url: signedUrl, public_url: publicUrl });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Could not create upload URL" },
+      { status: 500 }
+    );
   }
-
-  const { data: urlData } = supabase.storage.from("assets").getPublicUrl(path);
-
-  return NextResponse.json({
-    signed_url: data.signedUrl,
-    path,
-    token: data.token,
-    public_url: urlData.publicUrl,
-  });
 }

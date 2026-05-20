@@ -6,7 +6,6 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
 import {
   ChevronLeft, Upload, Film, Captions,
   CheckCircle2, Loader2, Globe, Ratio,
@@ -102,8 +101,6 @@ type Stage = "idle" | "extracting" | "uploading" | "transcribing" | "done";
 export default function CaptionPage() {
   const router   = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const supabase = createClient();
-
   const [file,         setFile]         = useState<File | null>(null);
   const [title,        setTitle]        = useState("");
   const [language,     setLanguage]     = useState("auto");
@@ -184,16 +181,22 @@ export default function CaptionPage() {
       const urlData = await urlRes.json();
       if (!urlRes.ok) throw new Error(urlData.error ?? "Could not get upload URL");
 
-      const { path, token, public_url: videoUrl } = urlData as {
-        signed_url: string; path: string; token: string; public_url: string;
+      const { signed_url: signedUrl, public_url: videoUrl } = urlData as {
+        signed_url: string; public_url: string;
       };
 
-      // Upload directly to Supabase Storage (bypasses Vercel size limits entirely)
-      const { error: uploadError } = await supabase.storage
-        .from("assets")
-        .uploadToSignedUrl(path, token, file, { contentType: file.type });
-
-      if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+      // Upload directly to Cloudflare R2 via presigned URL — no size limits
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", signedUrl);
+        xhr.setRequestHeader("Content-Type", file.type);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setUploadPct(Math.round((e.loaded / e.total) * 100));
+        };
+        xhr.onload  = () => (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error(`Upload failed (${xhr.status})`));
+        xhr.onerror = () => reject(new Error("Network error during upload"));
+        xhr.send(file);
+      });
       setUploadPct(100);
 
       // ── Stage 3: Transcribe via our API (only sends small audio file) ──────
