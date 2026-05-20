@@ -39,9 +39,9 @@ export function ProcessingScreen({ project: initial, transcriptionJob }: Process
         if (data.error) {
           setStatus("error");
           setErrMsg(data.error);
-        } else {
-          setStatus("ready");
         }
+        // Job submitted successfully — keep status as "processing"
+        // The status-polling interval below will detect actual completion
       })
       .catch(err => {
         setStatus("error");
@@ -74,12 +74,12 @@ export function ProcessingScreen({ project: initial, transcriptionJob }: Process
     return () => clearInterval(interval);
   }, [status, initial.id, router]);
 
-  // Redirect when ready
+  // Redirect when ready — navigate to clean URL so the editor opens
   useEffect(() => {
     if (status === "ready") {
-      setTimeout(() => router.refresh(), 500);
+      setTimeout(() => router.replace(`/projects/${initial.id}/edit`), 500);
     }
-  }, [status, router]);
+  }, [status, initial.id, router]);
 
   // Elapsed counter
   useEffect(() => {
