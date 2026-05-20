@@ -36,6 +36,7 @@ import {
   Check as CheckIcon, Undo2, Redo2,
   Replace as ReplaceIcon, ZoomIn, ZoomOut,
   Scissors as ScissorsIcon,
+  PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import type { Project, TimelineData, TimelineClip } from "@/types";
 
@@ -166,6 +167,15 @@ export function ProjectEditor({ project }: { project: Project }) {
   const currentCaption = (captionTrack?.clips as TimelineClip[] | undefined)?.find(
     (c) => playTime >= c.start_time && playTime < c.start_time + c.duration
   ) ?? null;
+
+  // Caption list auto-scroll — keeps the playing caption visible in the panel
+  const captionListRef = useRef<HTMLDivElement>(null);
+  const activeCaptionRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (activeCaptionRef.current) {
+      activeCaptionRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [currentCaption?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const progressPercent = totalDuration > 0 ? (playTime / totalDuration) * 100 : 0;
 
@@ -411,6 +421,18 @@ export function ProjectEditor({ project }: { project: Project }) {
 
   // ── UI state ──
   const [activeTab, setActiveTab] = useState("script");
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  useEffect(() => {
+    const stored = localStorage.getItem("editor-left-collapsed");
+    if (stored !== null) setLeftCollapsed(stored === "true");
+  }, []);
+  function toggleLeft() {
+    setLeftCollapsed((v) => {
+      localStorage.setItem("editor-left-collapsed", String(!v));
+      return !v;
+    });
+  }
+
   const [showExportModal, setShowExportModal] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -449,7 +471,7 @@ export function ProjectEditor({ project }: { project: Project }) {
       const updatedTimeline = {
         ...timeline,
         tracks: timeline?.tracks?.map((t) =>
-          t.id === "caption_track" ? { ...t, clips: editedCaptions } : t
+          t.type === "text" ? { ...t, clips: editedCaptions } : t
         ),
       };
       const res = await fetch(`/api/projects/${project.id}`, {
@@ -1164,19 +1186,39 @@ export function ProjectEditor({ project }: { project: Project }) {
 
       <div className="flex flex-1 overflow-hidden">
         {/* ── Left sidebar ── */}
-        <aside className="flex w-64 flex-shrink-0 flex-col border-r border-border bg-surface">
-          <nav className="flex flex-col gap-0.5 p-2">
+        <aside className={cn(
+          "flex flex-shrink-0 flex-col border-r border-border bg-surface transition-all duration-200",
+          leftCollapsed ? "w-12" : "w-56"
+        )}>
+          {/* Tab nav + collapse toggle */}
+          <nav className="flex flex-col gap-0.5 p-1.5 flex-shrink-0">
+            <div className={cn("flex items-center mb-0.5", leftCollapsed ? "justify-center" : "justify-end px-1")}>
+              <button
+                onClick={toggleLeft}
+                aria-label={leftCollapsed ? "Expand panel" : "Collapse panel"}
+                className="flex h-6 w-6 items-center justify-center rounded-md text-muted hover:text-white hover:bg-elevated transition-all"
+              >
+                {leftCollapsed ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
+              </button>
+            </div>
             {SIDEBAR_TABS.map(({ id, icon: Icon, label }) => (
-              <button key={id} onClick={() => setActiveTab(id)}
-                className={cn("flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-all",
+              <button
+                key={id}
+                onClick={() => { setActiveTab(id); if (leftCollapsed) setLeftCollapsed(false); }}
+                title={leftCollapsed ? label : undefined}
+                className={cn(
+                  "flex items-center rounded-lg px-2 py-2 text-sm font-medium transition-all",
+                  leftCollapsed ? "justify-center" : "gap-2.5",
                   activeTab === id ? "bg-gold-500/15 text-gold-500" : "text-subtle hover:bg-elevated hover:text-white"
-                )}>
+                )}
+              >
                 <Icon className="h-4 w-4 flex-shrink-0" />
-                {label}
+                {!leftCollapsed && <span className="truncate">{label}</span>}
               </button>
             ))}
           </nav>
 
+          {!leftCollapsed && (
           <div className="flex-1 overflow-y-auto border-t border-border">
 
             {/* ── SCRIPT ── */}
@@ -1210,161 +1252,140 @@ export function ProjectEditor({ project }: { project: Project }) {
 
             {/* ── CAPTIONS ── */}
             {activeTab === "captions" && (
-              <div className="p-3 space-y-3">
-                {/* Phase 17: Auto-translate */}
-                {editedCaptions.length > 0 && (
-                  <div className="rounded-xl border border-gold-500/20 bg-gold-500/5 p-2.5">
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <Sparkles className="h-3 w-3 text-gold-500" />
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-gold-500">
-                        AI Translate
-                      </p>
-                      {translating && (
-                        <span className="ml-auto text-[10px] text-muted flex items-center gap-1">
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          {translating}…
-                        </span>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-3 gap-1">
-                      {["Hindi", "Tamil", "Telugu", "Bengali", "Kannada", "Marathi", "Punjabi", "Malayalam", "Gujarati"].map((lang) => (
-                        <button
-                          key={lang}
-                          onClick={() => translateCaptions(lang)}
-                          disabled={!!translating}
-                          title={`Translate all captions to ${lang}`}
-                          className="rounded-md border border-border bg-elevated/30 px-1.5 py-1 text-[10px] text-subtle hover:text-white hover:border-gold-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                        >
-                          {lang}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="mt-1.5 text-[9px] text-muted">
-                      Translates all {editedCaptions.length} caption{editedCaptions.length !== 1 ? "s" : ""} in the native script
-                    </p>
-                  </div>
-                )}
+              <div className="flex flex-col h-full">
 
-                {/* Caption style template gallery */}
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-2">Style template</p>
-                  <CaptionTemplatePicker
-                    selectedId={activeCaptionStyleId}
-                    onSelect={(style) => {
-                      setActiveCaptionStyleId(style.id);
-                      setEditedCaptions((prev) => prev.map((c) => ({
-                        ...c,
-                        color: style.color,
-                        font_size: style.font_size,
-                        font_family: style.font_family,
-                        animation: style.animation,
-                        position: { x: style.position_x, y: style.position_y },
-                      })));
-                      toast.success(`${style.label} applied — click Save`);
-                    }}
-                    compact
-                  />
-                </div>
-
-                {/* Word emphasis style — applies to *highlighted* words */}
-                <div>
-                  <button
-                    onClick={() => setShowEmphasisEditor((v) => !v)}
-                    className="w-full flex items-center justify-between rounded-lg border border-gold-500/30 bg-gold-500/5 px-2.5 py-2 text-[11px] text-gold-400 hover:bg-gold-500/10 transition-all"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <Sparkles className="h-3 w-3" />
-                      Word Emphasis Style
-                    </span>
-                    <span className="text-[9px] text-muted">
-                      {showEmphasisEditor ? "Hide" : "Customize"}
-                    </span>
-                  </button>
-                  {showEmphasisEditor && (
-                    <div className="mt-2">
-                      <EmphasisStyleEditor value={emphasisStyle} onChange={saveEmphasisStyle} />
-                      <p className="mt-1.5 text-[9px] text-muted text-center">
-                        Wrap words in *asterisks* to apply this style
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Caption inspector (when one is selected) */}
-                {selectedCaptionId && (() => {
-                  const cap = editedCaptions.find((c) => c.id === selectedCaptionId);
-                  if (!cap) return null;
-                  return (
-                    <CaptionInspector
-                      caption={cap}
-                      onChange={(updates) => {
-                        setEditedCaptions((prev) => prev.map((c) =>
-                          c.id === selectedCaptionId ? { ...c, ...updates } : c
-                        ));
-                      }}
-                      onClose={() => setSelectedCaptionId(null)}
-                    />
-                  );
-                })()}
-
-                {/* Toolbar */}
-                <div className="flex items-center justify-between mb-1 border-t border-border pt-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                    Captions ({editedCaptions.length})
-                  </p>
-                  <div className="flex gap-1">
+                  {/* ── Action toolbar ── */}
+                  <div className="flex items-center gap-1 px-2 py-2 border-b border-border bg-surface/80">
+                    <Button
+                      size="sm"
+                      onClick={saveCaptions}
+                      loading={savingCaptions}
+                      className="flex-1 h-7 text-[11px]"
+                    >
+                      <Save className="h-3 w-3" />
+                      Save
+                    </Button>
+                    <button
+                      onClick={downloadSRT}
+                      disabled={editedCaptions.length === 0}
+                      title="Download SRT subtitle file"
+                      className="flex items-center gap-1 rounded-lg border border-border bg-elevated px-2 h-7 text-[11px] text-subtle hover:text-white hover:border-gold-500/30 transition-all disabled:opacity-40"
+                    >
+                      SRT
+                    </button>
                     <button
                       onClick={() => setShowFindReplace(true)}
                       disabled={editedCaptions.length === 0}
-                      title="Find & replace"
-                      className="flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[10px] text-subtle hover:text-white hover:border-gold-500/30 transition-all disabled:opacity-40"
+                      title="Find & replace text"
+                      className="flex items-center justify-center rounded-lg border border-border bg-elevated h-7 w-7 text-muted hover:text-white hover:border-gold-500/30 transition-all disabled:opacity-40"
                     >
-                      <ReplaceIcon className="h-3 w-3" />
-                      F & R
+                      <ReplaceIcon className="h-3.5 w-3.5" />
                     </button>
-                    <Button size="sm" onClick={saveCaptions} loading={savingCaptions} className="h-6 text-[10px] px-2">
-                      <Save className="h-3 w-3" /> Save
-                    </Button>
                   </div>
-                </div>
-                {editedCaptions.length === 0 && (
-                  <p className="text-xs text-muted text-center py-4">No captions yet. Generate a video first.</p>
-                )}
-                <div className="space-y-1.5 max-h-[380px] overflow-y-auto">
-                  {editedCaptions.map((cap, i) => (
-                    <div
-                      key={cap.id}
-                      className={cn(
-                        "group rounded-lg border bg-elevated/50 p-2 transition-all cursor-pointer",
-                        selectedCaptionId === cap.id
-                          ? "border-gold-500/60 ring-1 ring-gold-500/20 bg-gold-500/5"
-                          : "border-border hover:border-border-strong"
-                      )}
-                      onClick={() => setSelectedCaptionId(cap.id === selectedCaptionId ? null : cap.id)}
-                    >
-                      <div className="flex items-start gap-1.5">
-                        <span className="text-[10px] text-muted mt-0.5 flex-shrink-0 w-5">{i + 1}.</span>
-                        <textarea
-                          value={String(cap.text || "")}
-                          onChange={(e) => setEditedCaptions((prev) => prev.map((c, j) => j === i ? { ...c, text: e.target.value } : c))}
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex-1 bg-transparent text-xs text-white focus:outline-none resize-none leading-relaxed"
-                          rows={2}
-                        />
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setEditedCaptions((prev) => prev.filter((_, j) => j !== i)); }}
-                          aria-label={`Delete caption ${i + 1}`}
-                          className="opacity-0 group-hover:opacity-100 text-muted hover:text-ember-400 transition-all flex-shrink-0"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                      <p className="text-[9px] text-muted mt-1 ml-6">
-                        {cap.start_time.toFixed(1)}s → {(cap.start_time + cap.duration).toFixed(1)}s · click to style
-                      </p>
+
+                  {/* ── Caption count + live indicator ── */}
+                  <div className="flex items-center justify-between px-3 py-1.5 flex-shrink-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+                      {editedCaptions.length} Caption{editedCaptions.length !== 1 ? "s" : ""}
+                    </p>
+                    {currentCaption && (
+                      <span className="flex items-center gap-1 text-[10px] text-gold-500">
+                        <span className="h-1.5 w-1.5 rounded-full bg-gold-500 animate-pulse" />
+                        Live
+                      </span>
+                    )}
+                  </div>
+
+                  {editedCaptions.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+                      <MessageSquare className="h-8 w-8 text-muted/40 mb-3" />
+                      <p className="text-xs text-muted">No captions yet.</p>
+                      <p className="text-[10px] text-muted/60 mt-1">Transcribe a video to get started.</p>
                     </div>
-                  ))}
-                </div>
+                  )}
+
+                  <div
+                    ref={captionListRef}
+                    className="flex-1 overflow-y-auto px-2 pb-3 space-y-1"
+                  >
+                    {editedCaptions.map((cap, i) => {
+                      const active = currentCaption?.id === cap.id;
+                      const selected = selectedCaptionId === cap.id;
+                      return (
+                        <div
+                          key={cap.id}
+                          ref={active ? activeCaptionRef : undefined}
+                          className={cn(
+                            "group rounded-xl border transition-all",
+                            active
+                              ? "border-gold-500/70 bg-gold-500/8 ring-1 ring-gold-500/20"
+                              : selected
+                                ? "border-gold-500/40 bg-gold-500/5"
+                                : "border-border bg-elevated/40 hover:border-border-strong"
+                          )}
+                        >
+                          {/* Time + delete row */}
+                          <div className="flex items-center gap-1.5 px-2.5 pt-2 pb-0.5">
+                            <span className={cn(
+                              "text-[10px] font-mono font-medium flex-shrink-0 px-1.5 py-0.5 rounded-md",
+                              active ? "bg-gold-500/20 text-gold-400" : "text-muted bg-elevated/60"
+                            )}>
+                              {cap.start_time.toFixed(1)}s
+                            </span>
+                            <span className="text-[9px] text-muted/60">→</span>
+                            <span className="text-[10px] font-mono text-muted">
+                              {(cap.start_time + cap.duration).toFixed(1)}s
+                            </span>
+                            {active && (
+                              <span className="ml-auto text-[9px] text-gold-500 font-medium flex items-center gap-0.5">
+                                <span className="h-1 w-1 rounded-full bg-gold-500 animate-pulse" />
+                                playing
+                              </span>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditedCaptions((prev) => prev.filter((_, j) => j !== i));
+                                if (selectedCaptionId === cap.id) setSelectedCaptionId(null);
+                              }}
+                              aria-label={`Delete caption ${i + 1}`}
+                              className={cn(
+                                "opacity-0 group-hover:opacity-100 ml-auto text-muted hover:text-ember-400 transition-all flex-shrink-0",
+                                active && "ml-1"
+                              )}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+
+                          {/* Text + style trigger */}
+                          <div className="px-2.5 pb-2">
+                            <textarea
+                              value={String(cap.text || "")}
+                              onChange={(e) => setEditedCaptions((prev) =>
+                                prev.map((c, j) => j === i ? { ...c, text: e.target.value } : c)
+                              )}
+                              rows={2}
+                              className={cn(
+                                "w-full bg-transparent text-xs leading-relaxed focus:outline-none resize-none",
+                                active ? "text-white" : "text-subtle focus:text-white"
+                              )}
+                              placeholder="Caption text…"
+                            />
+                            <button
+                              onClick={() => setSelectedCaptionId(cap.id === selectedCaptionId ? null : cap.id)}
+                              className={cn(
+                                "text-[9px] transition-all",
+                                selected ? "text-gold-500" : "text-muted hover:text-gold-500"
+                              )}
+                            >
+                              {selected ? "▲ Style ›" : "▼ Style"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
               </div>
             )}
 
@@ -1786,6 +1807,7 @@ export function ProjectEditor({ project }: { project: Project }) {
               </div>
             )}
           </div>
+          )} {/* end !leftCollapsed */}
         </aside>
 
         {/* ── CENTER PREVIEW ── */}
@@ -1799,7 +1821,9 @@ export function ProjectEditor({ project }: { project: Project }) {
                   currentClipIndex={currentClipIndex}
                   currentCaption={currentCaption}
                   isPlaying={isPlaying}
+                  isMuted={isMuted}
                   emphasisStyle={emphasisStyle}
+                  onTimeUpdate={(t) => setPlayTime(t)}
                 />
                 {/* Controls overlay */}
                 <div className="absolute top-3 left-3 z-10">
@@ -1833,7 +1857,7 @@ export function ProjectEditor({ project }: { project: Project }) {
             {/* 16:9 */}
             {project.aspect_ratio === "16:9" && (
               <div className="relative w-[600px] h-[338px] rounded-2xl overflow-hidden border border-border shadow-[0_0_80px_rgba(0,0,0,0.9)]">
-                <VideoPlayer clips={brollClips} currentClipIndex={currentClipIndex} currentCaption={currentCaption} isPlaying={isPlaying} emphasisStyle={emphasisStyle} />
+                <VideoPlayer clips={brollClips} currentClipIndex={currentClipIndex} currentCaption={currentCaption} isPlaying={isPlaying} isMuted={isMuted} emphasisStyle={emphasisStyle} onTimeUpdate={(t) => setPlayTime(t)} />
                 <div className="absolute inset-0 z-10 flex items-center justify-center">
                   <button onClick={togglePlay} className="flex h-16 w-16 items-center justify-center rounded-full bg-black/40 backdrop-blur border border-white/20 hover:bg-black/60 transition-all">
                     {isPlaying ? <Pause className="h-7 w-7 text-white" /> : <Play className="h-7 w-7 text-white ml-1" />}
@@ -1851,7 +1875,7 @@ export function ProjectEditor({ project }: { project: Project }) {
             {/* 1:1 */}
             {project.aspect_ratio === "1:1" && (
               <div className="relative w-[380px] h-[380px] rounded-2xl overflow-hidden border border-border shadow-[0_0_80px_rgba(0,0,0,0.9)]">
-                <VideoPlayer clips={brollClips} currentClipIndex={currentClipIndex} currentCaption={currentCaption} isPlaying={isPlaying} emphasisStyle={emphasisStyle} />
+                <VideoPlayer clips={brollClips} currentClipIndex={currentClipIndex} currentCaption={currentCaption} isPlaying={isPlaying} isMuted={isMuted} emphasisStyle={emphasisStyle} onTimeUpdate={(t) => setPlayTime(t)} />
                 <div className="absolute inset-0 z-10 flex items-center justify-center">
                   <button onClick={togglePlay} className="flex h-14 w-14 items-center justify-center rounded-full bg-black/40 backdrop-blur border border-white/20 hover:bg-black/60 transition-all">
                     {isPlaying ? <Pause className="h-6 w-6 text-white" /> : <Play className="h-6 w-6 text-white ml-1" />}
@@ -1884,94 +1908,194 @@ export function ProjectEditor({ project }: { project: Project }) {
           </div>
         </main>
 
-        {/* ── Right panel ── */}
-        <aside className="w-52 flex-shrink-0 border-l border-border bg-surface p-4 space-y-5 overflow-y-auto">
-          <div>
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Details</p>
-            <div className="space-y-2.5">
-              {[
-                { label: "Duration", value: formatDuration(totalDuration) },
-                { label: "Format", value: project.aspect_ratio },
-                { label: "Status", value: project.status },
-                { label: "Clips", value: `${brollClips.length} B-roll` },
-                { label: "Captions", value: `${editedCaptions.length} lines` },
-              ].map((item) => (
-                <div key={item.label} className="flex items-center justify-between">
-                  <span className="text-xs text-muted">{item.label}</span>
-                  <span className="text-xs font-medium text-white">{item.value}</span>
+        {/* ── Right panel — contextual ── */}
+        <aside className="w-56 flex-shrink-0 border-l border-border bg-surface overflow-y-auto">
+          {activeTab === "captions" ? (
+            /* ── Caption style editor ── */
+            <div className="p-3 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">Caption Style</p>
+
+              {/* Template picker */}
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-2">Presets</p>
+                <CaptionTemplatePicker
+                  selectedId={activeCaptionStyleId}
+                  onSelect={(style) => {
+                    setActiveCaptionStyleId(style.id);
+                    setEditedCaptions((prev) => prev.map((c) => ({
+                      ...c,
+                      color: style.color,
+                      font_size: style.font_size,
+                      font_family: style.font_family,
+                      animation: style.animation,
+                      position: { x: style.position_x, y: style.position_y },
+                    })));
+                    toast.success(`${style.label} applied — click Save`);
+                  }}
+                  compact
+                />
+              </div>
+
+              {/* Per-caption inspector */}
+              {selectedCaptionId && (() => {
+                const cap = editedCaptions.find((c) => c.id === selectedCaptionId);
+                if (!cap) return null;
+                return (
+                  <div className="border-t border-border pt-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Selected Caption</p>
+                      <button onClick={() => setSelectedCaptionId(null)} className="text-muted hover:text-white transition-colors">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                    <CaptionInspector
+                      caption={cap}
+                      onChange={(updates) => {
+                        setEditedCaptions((prev) => prev.map((c) =>
+                          c.id === selectedCaptionId ? { ...c, ...updates } : c
+                        ));
+                      }}
+                      onClose={() => setSelectedCaptionId(null)}
+                    />
+                  </div>
+                );
+              })()}
+
+              {/* Emphasis */}
+              <div className="border-t border-border pt-3">
+                <button
+                  onClick={() => setShowEmphasisEditor((v) => !v)}
+                  className="w-full flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-gold-500 hover:text-gold-400 transition-all mb-1"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="h-3 w-3" />
+                    Emphasis
+                  </span>
+                  <ChevronRight className={cn("h-3 w-3 transition-transform", showEmphasisEditor && "rotate-90")} />
+                </button>
+                {showEmphasisEditor && (
+                  <>
+                    <EmphasisStyleEditor value={emphasisStyle} onChange={saveEmphasisStyle} />
+                    <p className="mt-1.5 text-[9px] text-muted text-center">
+                      Wrap words in *asterisks* to apply emphasis
+                    </p>
+                  </>
+                )}
+              </div>
+
+              {/* AI Translate */}
+              {editedCaptions.length > 0 && (
+                <details className="border-t border-border pt-3 group">
+                  <summary className="flex items-center gap-1.5 cursor-pointer text-[10px] font-semibold uppercase tracking-wider text-gold-500 hover:text-gold-400 transition-all list-none">
+                    <Sparkles className="h-3 w-3" />
+                    AI Translate
+                    {translating && <Loader2 className="h-3 w-3 animate-spin ml-auto" />}
+                    <ChevronRight className="h-3 w-3 ml-auto group-open:rotate-90 transition-transform" />
+                  </summary>
+                  <div className="mt-2">
+                    <div className="grid grid-cols-3 gap-1">
+                      {["Hindi", "Tamil", "Telugu", "Bengali", "Kannada", "Marathi", "Punjabi", "Malayalam", "Gujarati"].map((lang) => (
+                        <button
+                          key={lang}
+                          onClick={() => translateCaptions(lang)}
+                          disabled={!!translating}
+                          className="rounded-md border border-border bg-elevated/30 px-1.5 py-1 text-[10px] text-subtle hover:text-white hover:border-gold-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                        >
+                          {lang}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-1.5 text-[9px] text-muted">
+                      {editedCaptions.length} caption{editedCaptions.length !== 1 ? "s" : ""} · translates in native script
+                    </p>
+                  </div>
+                </details>
+              )}
+            </div>
+          ) : (
+            /* ── Default: export + project actions ── */
+            <div className="p-3 space-y-4">
+              {/* Compact stats */}
+              <div className="rounded-xl border border-border bg-elevated/50 p-3 space-y-1.5">
+                {[
+                  { label: "Format", value: project.aspect_ratio },
+                  { label: "Duration", value: formatDuration(totalDuration) },
+                  { label: "Clips", value: String(brollClips.length) },
+                  { label: "Captions", value: String(editedCaptions.length) },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center justify-between">
+                    <span className="text-[10px] text-muted">{item.label}</span>
+                    <span className="text-[10px] font-medium text-white">{item.value}</span>
+                  </div>
+                ))}
+                <p className="text-[10px] text-gold-500 font-medium pt-0.5 border-t border-border mt-1">
+                  {project.aspect_ratio === "9:16" ? "Reels / Shorts / TikTok" :
+                   project.aspect_ratio === "16:9" ? "YouTube / Web" : "Instagram Feed"}
+                </p>
+              </div>
+
+              {/* Export */}
+              <div>
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted">Export</p>
+                <div className="space-y-1.5">
+                  <button onClick={() => setShowExportModal(true)}
+                    className="w-full flex items-center justify-between rounded-lg border border-gold-500/30 bg-gold-500/5 p-2 text-xs text-gold-400 hover:border-gold-500/60 hover:bg-gold-500/10 transition-all font-medium">
+                    <span>Export video</span>
+                    <Download className="h-3 w-3" />
+                  </button>
+                  <button onClick={handleShare}
+                    className="w-full flex items-center justify-between rounded-lg border border-border p-2 text-xs text-subtle hover:border-gold-500/30 hover:text-white transition-all">
+                    <span>Copy share link</span>
+                    <Share2 className="h-3 w-3" />
+                  </button>
+                  <button onClick={handleShareWhatsApp}
+                    className="w-full flex items-center justify-between rounded-lg border border-green-500/30 bg-green-500/5 p-2 text-xs text-green-400 hover:bg-green-500/10 transition-all">
+                    <span>Share on WhatsApp</span>
+                    <span className="text-sm leading-none">💬</span>
+                  </button>
+                  <button onClick={downloadSRT}
+                    className="w-full flex items-center justify-between rounded-lg border border-border p-2 text-xs text-subtle hover:border-gold-500/30 hover:text-white transition-all">
+                    <span>Export SRT</span>
+                    <Download className="h-3 w-3" />
+                  </button>
                 </div>
-              ))}
+              </div>
+
+              {/* Project actions */}
+              <div className="border-t border-border pt-3">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted">Project</p>
+                <div className="space-y-1.5">
+                  <button onClick={() => setShowRegenerateConfirm(true)}
+                    className="w-full flex items-center justify-between rounded-lg border border-border p-2 text-xs text-subtle hover:border-ember-500/30 hover:text-ember-400 transition-all">
+                    <span>Regenerate video</span>
+                    <Zap className="h-3 w-3" />
+                  </button>
+                  <button onClick={handleDuplicate} disabled={duplicating}
+                    className="w-full flex items-center justify-between rounded-lg border border-border p-2 text-xs text-subtle hover:border-gold-500/30 hover:text-white transition-all disabled:opacity-50">
+                    <span>{duplicating ? "Duplicating…" : "Duplicate"}</span>
+                    <Copy className="h-3 w-3" />
+                  </button>
+                  <button onClick={() => setShowDeleteConfirm(true)} disabled={deleting}
+                    className="w-full flex items-center justify-between rounded-lg border border-ember-500/20 p-2 text-xs text-ember-500/70 hover:border-ember-500/50 hover:text-ember-400 transition-all">
+                    <span>{deleting ? "Deleting…" : "Delete project"}</span>
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+
+              {/* AI stack */}
+              <div className="border-t border-border pt-3">
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted">AI stack</p>
+                <div className="space-y-0.5 text-[10px] text-muted">
+                  <p>✓ Claude — script</p>
+                  <p>✓ ElevenLabs — voice</p>
+                  <p>✓ Pexels — B-roll</p>
+                  <p>✓ Pixabay — music</p>
+                  <p>✓ AssemblyAI — captions</p>
+                </div>
+              </div>
             </div>
-          </div>
-
-          <div className="border-t border-border pt-4">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Export</p>
-
-            {/* Platform label hint */}
-            <div className="mb-2 rounded-lg bg-elevated/50 p-2 text-[10px] text-muted">
-              <span className="text-gold-500 font-medium">
-                {project.aspect_ratio === "9:16" ? "Reels / Shorts / TikTok" :
-                 project.aspect_ratio === "16:9" ? "YouTube / Web" : "Instagram Feed / Square"}
-              </span>{" "}
-              · {project.aspect_ratio}
-            </div>
-
-            <button onClick={() => setShowExportModal(true)}
-              className="w-full flex items-center justify-between rounded-lg border border-gold-500/30 bg-gold-500/5 p-2.5 text-xs text-gold-400 hover:border-gold-500/60 hover:bg-gold-500/10 transition-all mb-2 font-medium">
-              <span>Export video (WebM)</span>
-              <Download className="h-3 w-3" />
-            </button>
-            <button onClick={handleShare}
-              className="w-full flex items-center justify-between rounded-lg border border-border p-2.5 text-xs text-subtle hover:border-gold-500/30 hover:text-white transition-all mb-2">
-              <span>Copy share link</span>
-              <Share2 className="h-3 w-3" />
-            </button>
-            <button onClick={handleShareWhatsApp}
-              className="w-full flex items-center justify-between rounded-lg border border-green-500/30 bg-green-500/5 p-2.5 text-xs text-green-400 hover:bg-green-500/10 transition-all mb-2">
-              <span>Share on WhatsApp</span>
-              <span className="text-base leading-none">💬</span>
-            </button>
-            <button onClick={downloadSRT}
-              className="w-full flex items-center justify-between rounded-lg border border-border p-2.5 text-xs text-subtle hover:border-gold-500/30 hover:text-white transition-all mb-2">
-              <span>Export captions (.srt)</span>
-              <Download className="h-3 w-3" />
-            </button>
-            <button onClick={() => window.open(`/api/projects/${project.id}/export`, "_blank")}
-              className="w-full flex items-center justify-between rounded-lg border border-border p-2.5 text-xs text-subtle hover:border-gold-500/30 hover:text-white transition-all mb-4">
-              <span>Download JSON</span>
-              <ChevronRight className="h-3 w-3" />
-            </button>
-          </div>
-
-          <div className="border-t border-border pt-4">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Project</p>
-            <button onClick={() => setShowRegenerateConfirm(true)}
-              className="w-full flex items-center justify-between rounded-lg border border-border p-2.5 text-xs text-subtle hover:border-ember-500/30 hover:text-ember-400 transition-all mb-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-500">
-              <span>Regenerate video</span>
-              <Zap className="h-3 w-3" />
-            </button>
-            <button onClick={handleDuplicate} disabled={duplicating}
-              className="w-full flex items-center justify-between rounded-lg border border-border p-2.5 text-xs text-subtle hover:border-gold-500/30 hover:text-white transition-all mb-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-500 disabled:opacity-50">
-              <span>{duplicating ? "Duplicating..." : "Duplicate project"}</span>
-              <Copy className="h-3 w-3" />
-            </button>
-            <button onClick={() => setShowDeleteConfirm(true)} disabled={deleting}
-              className="w-full flex items-center justify-between rounded-lg border border-ember-500/20 p-2.5 text-xs text-ember-500/70 hover:border-ember-500/50 hover:text-ember-400 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500">
-              <span>{deleting ? "Deleting..." : "Delete project"}</span>
-              <Trash2 className="h-3 w-3" />
-            </button>
-          </div>
-
-          <div className="border-t border-border pt-4">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">AI stack</p>
-            <div className="space-y-1 text-[10px] text-muted">
-              <p>✓ Claude — script</p>
-              <p>✓ ElevenLabs — voice</p>
-              <p>✓ Pexels — B-roll</p>
-              <p>✓ Pixabay — music</p>
-              <p>✓ Whisper — captions</p>
-            </div>
-          </div>
+          )}
         </aside>
       </div>
 

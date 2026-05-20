@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    --background: #0a0a0a;
+    --background: #080810;
     --foreground: #ffffff;
   }
 
@@ -21,41 +21,41 @@
   }
 
   body {
-    background-color: #0a0a0a;
+    background-color: #080810;
     color: #ffffff;
     font-family: var(--font-inter), system-ui, sans-serif;
   }
 
   /* Custom scrollbar */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
   }
 
   ::-webkit-scrollbar-track {
-    background: #0a0a0a;
+    background: #080810;
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #3a3a3a;
+    background: #2E2E46;
     border-radius: 3px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #4a4a4a;
+    background: #3E3E5A;
   }
 
-  /* Selection color */
+  /* Selection color — electric blue */
   ::selection {
-    background-color: rgba(240, 165, 0, 0.3);
+    background-color: rgba(0, 87, 255, 0.30);
     color: #ffffff;
   }
 }
 
 @layer utilities {
-  /* Gradient text utility */
+  /* Gradient text utility — electric blue → cayenne */
   .text-gradient-gold {
-    background: linear-gradient(135deg, #f0a500 0%, #ff4d4d 60%, #f0a500 100%);
+    background: linear-gradient(135deg, #0057FF 0%, #FF3D00 60%, #0057FF 100%);
     background-size: 200% auto;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -84,11 +84,11 @@
     z-index: 0;
   }
 
-  /* Glow border */
+  /* Glow border — electric blue */
   .border-glow {
     border: 1px solid transparent;
-    background: linear-gradient(#141414, #141414) padding-box,
-      linear-gradient(135deg, rgba(240, 165, 0, 0.5), rgba(255, 77, 77, 0.3)) border-box;
+    background: linear-gradient(#10101A, #10101A) padding-box,
+      linear-gradient(135deg, rgba(0, 87, 255, 0.6), rgba(255, 61, 0, 0.35)) border-box;
   }
 
   /* Animated shimmer for skeleton loaders */

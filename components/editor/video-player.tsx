@@ -17,7 +17,9 @@ interface VideoPlayerProps {
   currentClipIndex: number;
   currentCaption: TimelineClip | null;
   isPlaying: boolean;
+  isMuted?: boolean;
   emphasisStyle?: EmphasisStyle;
+  onTimeUpdate?: (globalTime: number) => void;
 }
 
 export function VideoPlayer({
@@ -25,11 +27,20 @@ export function VideoPlayer({
   currentClipIndex,
   currentCaption,
   isPlaying,
+  isMuted = false,
   emphasisStyle,
+  onTimeUpdate,
 }: VideoPlayerProps) {
   const effectiveEmphasis = emphasisStyle || DEFAULT_EMPHASIS_STYLE;
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
+
+  // Sync muted state — React's `muted` prop doesn't always update the DOM attribute
+  useEffect(() => {
+    videoRefs.current.forEach((v) => {
+      if (v) v.muted = isMuted;
+    });
+  }, [isMuted]);
 
   // Play / pause the active video
   useEffect(() => {
@@ -110,13 +121,20 @@ export function VideoPlayer({
                   filter: filterCss || undefined,
                   ...kbStyle,
                 }}
-                muted
                 playsInline
                 loop
                 preload={i <= 1 ? "auto" : "none"}
                 onError={() =>
                   setFailedIds((prev) => new Set([...prev, clip.id]))
                 }
+                onTimeUpdate={() => {
+                  if (i === currentClipIndex && onTimeUpdate) {
+                    const v = videoRefs.current[i];
+                    if (!v) return;
+                    const accum = clips.slice(0, i).reduce((sum, c) => sum + c.duration, 0);
+                    onTimeUpdate(accum + v.currentTime);
+                  }
+                }}
               />
             ) : clip.thumbnail ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -147,7 +165,8 @@ export function VideoPlayer({
         const posX = currentCaption.position?.x ?? 50;
         const color = currentCaption.color || "#FFFFFF";
         const fontSize = currentCaption.font_size || 36;
-        const fontFamily = currentCaption.font_family || "Inter";
+        // Append system-ui so Hindi/Devanagari & other scripts fall back to system fonts
+        const fontFamily = `${currentCaption.font_family || "Inter"}, system-ui, sans-serif`;
         const animation = currentCaption.animation || "fade";
 
         // Scale font size to fit preview frame (16-pixel base maps to ~36px source)

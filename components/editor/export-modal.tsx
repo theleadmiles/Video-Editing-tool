@@ -16,12 +16,14 @@ interface ExportModalProps {
 
 type Phase = "idle" | "loading" | "rendering" | "transcoding" | "uploading" | "done";
 type Format = "webm" | "mp4";
+type Resolution = "720p" | "1080p";
 
 export function ExportModal({ project, onClose }: ExportModalProps) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState(0);
   const [transcodeProgress, setTranscodeProgress] = useState(0);
   const [format, setFormat] = useState<Format>("mp4");
+  const [resolution, setResolution] = useState<Resolution>("1080p");
   const [saveToCloud, setSaveToCloud] = useState(true);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -39,9 +41,11 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
   const musicUrl = musicTrack?.clips?.[0]?.url || "";
   const totalDuration = timeline?.duration || project.duration_seconds || 45;
 
-  const dim = (
-    { "9:16": { w: 720, h: 1280 }, "16:9": { w: 1280, h: 720 }, "1:1": { w: 720, h: 720 } } as Record<string, { w: number; h: number }>
-  )[project.aspect_ratio] || { w: 720, h: 1280 };
+  const DIMS: Record<Resolution, Record<string, { w: number; h: number }>> = {
+    "720p":  { "9:16": { w: 720,  h: 1280 }, "16:9": { w: 1280, h: 720  }, "1:1": { w: 720,  h: 720  } },
+    "1080p": { "9:16": { w: 1080, h: 1920 }, "16:9": { w: 1920, h: 1080 }, "1:1": { w: 1080, h: 1080 } },
+  };
+  const dim = DIMS[resolution][project.aspect_ratio] || DIMS[resolution]["9:16"];
 
   function loadImg(src: string): Promise<HTMLImageElement | null> {
     return new Promise((res) => {
@@ -241,7 +245,8 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
       ? "video/webm;codecs=vp9,opus"
       : "video/webm";
 
-    const recorder = new MediaRecorder(combined, { mimeType: mime, videoBitsPerSecond: 3_000_000 });
+    const videoBitrate = resolution === "1080p" ? 8_000_000 : 3_000_000;
+    const recorder = new MediaRecorder(combined, { mimeType: mime, videoBitsPerSecond: videoBitrate });
     const chunks: BlobPart[] = [];
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
     recorder.onstop = () => {
@@ -266,7 +271,7 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
     }
     requestAnimationFrame(render);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, brollClips, captions, voiceoverUrl, musicUrl, totalDuration, format, saveToCloud]);
+  }, [project, brollClips, captions, voiceoverUrl, musicUrl, totalDuration, format, resolution, saveToCloud]);
 
   const isRendering = phase !== "idle" && phase !== "done";
 
@@ -343,6 +348,37 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
                   </p>
                   <p className="mt-1 text-[10px] text-muted">~10-20s faster</p>
                 </button>
+              </div>
+            </div>
+
+            {/* Resolution picker */}
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-2">Resolution</p>
+              <div className="grid grid-cols-2 gap-2">
+                {(["720p", "1080p"] as Resolution[]).map((res) => (
+                  <button
+                    key={res}
+                    onClick={() => setResolution(res)}
+                    aria-pressed={resolution === res}
+                    className={cn(
+                      "rounded-xl border p-3 text-left transition-all",
+                      resolution === res
+                        ? "border-gold-500/60 bg-gold-500/10"
+                        : "border-border bg-elevated/30 hover:border-border-strong"
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-semibold text-white">{res}</span>
+                      {res === "1080p" && <Zap className={cn("h-4 w-4", resolution === "1080p" ? "text-gold-500" : "text-muted")} />}
+                    </div>
+                    <p className="text-[10px] text-muted">
+                      {res === "720p"
+                        ? project.aspect_ratio === "16:9" ? "1280×720 · Fast" : "720×1280 · Fast"
+                        : project.aspect_ratio === "16:9" ? "1920×1080 · HD" : "1080×1920 · Full HD"}
+                    </p>
+                    {res === "1080p" && <p className="mt-1 text-[10px] text-gold-500/80">Recommended</p>}
+                  </button>
+                ))}
               </div>
             </div>
 
