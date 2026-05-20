@@ -16,6 +16,7 @@ import {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const LANGUAGES = [
+  { value: "auto",      label: "Auto",       flag: "🌐" },
   { value: "English",   label: "English",    flag: "🇬🇧" },
   { value: "Hindi",     label: "हिन्दी",      flag: "🇮🇳" },
   { value: "Tamil",     label: "தமிழ்",      flag: "🇮🇳" },
@@ -105,7 +106,7 @@ export default function CaptionPage() {
 
   const [file,         setFile]         = useState<File | null>(null);
   const [title,        setTitle]        = useState("");
-  const [language,     setLanguage]     = useState("English");
+  const [language,     setLanguage]     = useState("auto");
   const [aspectRatio,  setAspectRatio]  = useState("9:16");
   const [stage,        setStage]        = useState<Stage>("idle");
   const [isDragging,   setIsDragging]   = useState(false);
@@ -389,8 +390,24 @@ export default function CaptionPage() {
             <label className="mb-3 flex items-center gap-2 text-sm font-medium text-subtle">
               <Globe className="h-4 w-4" /> Spoken language
             </label>
+            {/* Auto-detect as full-width first row */}
+            <button
+              onClick={() => setLanguage("auto")}
+              className={cn(
+                "mb-2 w-full flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all",
+                language === "auto"
+                  ? "border-gold-500/50 bg-gold-500/10 text-gold-400"
+                  : "border-border bg-surface text-subtle hover:border-border-strong hover:text-white"
+              )}
+            >
+              <span className="text-base">🌐</span>
+              Auto-detect language
+              {language === "auto" && (
+                <span className="ml-auto text-[10px] text-gold-500 font-semibold">Selected</span>
+              )}
+            </button>
             <div className="grid grid-cols-5 gap-2">
-              {LANGUAGES.map((lang) => (
+              {LANGUAGES.filter(l => l.value !== "auto").map((lang) => (
                 <button
                   key={lang.value}
                   onClick={() => setLanguage(lang.value)}
