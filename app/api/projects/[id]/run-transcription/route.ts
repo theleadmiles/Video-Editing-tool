@@ -48,7 +48,8 @@ export async function POST(
       throw new Error(`Audio is ${(audioBuffer.length / 1024 / 1024).toFixed(1)} MB — max 25 MB (~13 min)`);
     }
 
-    // 2. Transcribe with Whisper via plain fetch (no OpenAI SDK)
+    // 2. Transcribe with Whisper via plain fetch
+    // Uses verbose_json for segment-level timestamps (no timestamp_granularities — not supported by OpenRouter)
     console.log(`[run-transcription] calling Whisper via OpenRouter`);
     const langCode = LANGUAGE_CODES[languageName] ?? "";
 
@@ -56,7 +57,6 @@ export async function POST(
     formData.append("file", new Blob([audioBuffer], { type: "audio/wav" }), "audio.wav");
     formData.append("model", "openai/whisper-1");
     formData.append("response_format", "verbose_json");
-    formData.append("timestamp_granularities[]", "word");
     if (langCode) formData.append("language", langCode);
 
     const whisperRes = await fetch("https://openrouter.ai/api/v1/audio/transcriptions", {
@@ -75,13 +75,15 @@ export async function POST(
     const transcription = await whisperRes.json() as {
       text: string;
       duration?: number;
-      words?: { word: string; start: number; end: number }[];
+      segments?: { text: string; start: number; end: number }[];
     };
 
-    const words         = transcription.words ?? [];
-    const totalDuration = transcription.duration ?? (words.length > 0 ? words[words.length - 1].end : 30);
-    const captions      = buildCaptionClips(words, transcription.text, totalDuration);
-    console.log(`[run-transcription] transcribed: ${captions.length} captions, ${totalDuration.toFixed(1)}s`);
+    console.log(`[run-transcription] transcription done, building captions`);
+
+    const segments      = transcription.segments ?? [];
+    const totalDuration = transcription.duration ?? (segments.length > 0 ? segments[segments.length - 1].end : 30);
+    const captions      = buildCaptionClips(segments, transcription.text, totalDuration);
+    console.log(`[run-transcription] ${captions.length} captions, ${totalDuration.toFixed(1)}s`);
 
     // 3. Build timeline & update project
     const timeline = {
@@ -120,20 +122,46 @@ export async function POST(
   }
 }
 
+/**
+ * Builds caption clips from Whisper segments.
+ * Each segment is a natural phrase (~5-10 words) with start/end timestamps.
+ * We further split large segments into WORDS_PER_CHUNK word chunks.
+ */
 function buildCaptionClips(
-  words: { word: string; start: number; end: number }[],
+  segments: { text: string; start: number; end: number }[],
   fallbackText: string,
   totalDuration: number,
 ) {
-  if (!words.length) {
-    return [{ id: crypto.randomUUID(), text: fallbackText, start_time: 0, duration: totalDuration, animation: "fade" as const, color: "#FFFFFF", font_size: 32, position: { x: 50, y: 80 } }];
+  if (!segments.length) {
+    return [{
+      id: crypto.randomUUID(), text: fallbackText,
+      start_time: 0, duration: totalDuration,
+      animation: "fade" as const, color: "#FFFFFF", font_size: 32,
+      position: { x: 50, y: 80 },
+    }];
   }
+
   const clips = [];
-  for (let i = 0; i < words.length; i += WORDS_PER_CHUNK) {
-    const chunk = words.slice(i, i + WORDS_PER_CHUNK);
-    const start = chunk[0].start;
-    const end   = chunk[chunk.length - 1].end;
-    clips.push({ id: crypto.randomUUID(), text: chunk.map(w => w.word).join(" ").trim(), start_time: start, duration: Math.max(end - start, 0.3), animation: "fade" as const, color: "#FFFFFF", font_size: 32, position: { x: 50, y: 80 } });
+  for (const seg of segments) {
+    const words    = seg.text.trim().split(/\s+/).filter(Boolean);
+    const segDur   = seg.end - seg.start;
+    const secPerW  = segDur / Math.max(words.length, 1);
+
+    for (let i = 0; i < words.length; i += WORDS_PER_CHUNK) {
+      const chunk     = words.slice(i, i + WORDS_PER_CHUNK);
+      const chunkStart = seg.start + i * secPerW;
+      const chunkEnd   = seg.start + Math.min((i + WORDS_PER_CHUNK) * secPerW, segDur);
+      clips.push({
+        id: crypto.randomUUID(),
+        text: chunk.join(" "),
+        start_time: chunkStart,
+        duration: Math.max(chunkEnd - chunkStart, 0.3),
+        animation: "fade" as const,
+        color: "#FFFFFF",
+        font_size: 32,
+        position: { x: 50, y: 80 },
+      });
+    }
   }
   return clips;
 }
