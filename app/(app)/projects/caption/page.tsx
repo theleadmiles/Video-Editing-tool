@@ -187,19 +187,13 @@ export default function CaptionPage() {
         signed_url: string; path: string; token: string; public_url: string;
       };
 
-      // Upload the video directly to Supabase (large file — no Vercel in the loop)
-      // Progress via XHR since the Supabase SDK doesn't expose onUploadProgress in all versions
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", urlData.signed_url);
-        xhr.setRequestHeader("Content-Type", file.type);
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) setUploadPct(Math.round((e.loaded / e.total) * 100));
-        };
-        xhr.onload  = () => xhr.status < 300 ? resolve() : reject(new Error(`Upload failed (${xhr.status})`));
-        xhr.onerror = () => reject(new Error("Upload network error"));
-        xhr.send(file);
-      });
+      // Upload directly to Supabase Storage (bypasses Vercel size limits entirely)
+      const { error: uploadError } = await supabase.storage
+        .from("assets")
+        .uploadToSignedUrl(path, token, file, { contentType: file.type });
+
+      if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+      setUploadPct(100);
 
       // ── Stage 3: Transcribe via our API (only sends small audio file) ──────
       setStage("transcribing");
