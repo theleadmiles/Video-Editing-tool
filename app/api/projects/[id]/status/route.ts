@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
+
+const WORDS_PER_CHUNK = 5;
+
+function adminClient() {
+  return createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+}
 
 /** GET /api/projects/[id]/status — lightweight polling endpoint for the processing screen */
 export async function GET(
@@ -14,14 +24,135 @@ export async function GET(
 
   const { data: project } = await supabase
     .from("projects")
-    .select("id, status, timeline_data")
+    .select("id, status, timeline_data, aspect_ratio")
     .eq("id", id)
     .single();
 
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  // If an AssemblyAI job is in progress, check its status and finalise if done
+  const td = project.timeline_data as {
+    _pending?: {
+      assemblyai_id: string;
+      videoUrl:      string;
+      aspectRatio:   string;
+      workspaceId:   string;
+    };
+    error?: string;
+  } | null;
+
+  if (project.status === "processing" && td?._pending?.assemblyai_id) {
+    const apiKey = process.env.ASSEMBLYAI_API_KEY;
+    if (apiKey) {
+      try {
+        const aRes = await fetch(
+          `https://api.assemblyai.com/v2/transcript/${td._pending.assemblyai_id}`,
+          { headers: { "Authorization": apiKey } },
+        );
+
+        if (aRes.ok) {
+          const aData = await aRes.json() as {
+            status:    string;
+            text:      string;
+            duration?: number;
+            words?:    { text: string; start: number; end: number }[];
+          };
+
+          const admin = adminClient();
+
+          if (aData.status === "completed") {
+            // Build captions from word-level timestamps (in milliseconds → convert to seconds)
+            const words         = (aData.words ?? []).map(w => ({ ...w, start: w.start / 1000, end: w.end / 1000 }));
+            const totalDuration = aData.duration ?? (words.length > 0 ? words[words.length - 1].end : 30);
+            const captions      = buildCaptionClips(words, aData.text ?? "", totalDuration);
+            const { videoUrl, aspectRatio, workspaceId } = td._pending;
+
+            const timeline = {
+              tracks: [
+                { id: "video-track",    type: "video", clips: [{ id: crypto.randomUUID(), url: videoUrl, start_time: 0, duration: totalDuration }] },
+                { id: "captions-track", type: "text",  clips: captions },
+              ],
+              duration:     totalDuration,
+              aspect_ratio: aspectRatio,
+            };
+
+            await admin.from("projects").update({
+              status:           "ready",
+              duration_seconds: Math.ceil(totalDuration),
+              timeline_data:    timeline,
+            }).eq("id", id);
+
+            // Record asset for 30-day cleanup
+            const expiresAt = new Date();
+            expiresAt.setDate(expiresAt.getDate() + 30);
+            await admin.from("assets").insert({
+              workspace_id:     workspaceId,
+              type:             "video",
+              source:           "uploaded",
+              url:              videoUrl,
+              duration_seconds: Math.ceil(totalDuration),
+              metadata:         { project_id: id, mime_type: "video/*", kind: "caption_source", expires_at: expiresAt.toISOString() },
+            });
+
+            return NextResponse.json({ status: "ready", timeline_data: timeline });
+          }
+
+          if (aData.status === "error") {
+            const errMsg = "AssemblyAI transcription failed — please try again.";
+            await admin.from("projects").update({
+              status:        "error",
+              timeline_data: { error: errMsg },
+            }).eq("id", id);
+            return NextResponse.json({ status: "error", timeline_data: { error: errMsg } });
+          }
+
+          // Still queued or processing — return "processing" so the browser keeps polling
+          return NextResponse.json({ status: "processing", timeline_data: null });
+        }
+      } catch (e) {
+        console.error("[status] AssemblyAI check failed:", e);
+        // Non-fatal — return the DB status and let it retry next poll
+      }
+    }
+  }
+
   return NextResponse.json({
     status:        project.status,
     timeline_data: project.timeline_data,
   });
+}
+
+// ── Caption helpers ──────────────────────────────────────────────────────────
+
+function buildCaptionClips(
+  words: { text: string; start: number; end: number }[],
+  fallbackText: string,
+  totalDuration: number,
+) {
+  if (!words.length) {
+    return [{
+      id: crypto.randomUUID(), text: fallbackText,
+      start_time: 0, duration: totalDuration,
+      animation: "fade" as const, color: "#FFFFFF", font_size: 32,
+      position: { x: 50, y: 80 },
+    }];
+  }
+
+  const clips = [];
+  for (let i = 0; i < words.length; i += WORDS_PER_CHUNK) {
+    const chunk = words.slice(i, i + WORDS_PER_CHUNK);
+    const start = chunk[0].start;
+    const end   = chunk[chunk.length - 1].end;
+    clips.push({
+      id:         crypto.randomUUID(),
+      text:       chunk.map(w => w.text).join(" ").trim(),
+      start_time: start,
+      duration:   Math.max(end - start, 0.3),
+      animation:  "fade" as const,
+      color:      "#FFFFFF",
+      font_size:  32,
+      position:   { x: 50, y: 80 },
+    });
+  }
+  return clips;
 }
