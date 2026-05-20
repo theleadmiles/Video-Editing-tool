@@ -52,7 +52,11 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Fire-and-forget: kick off transcription in a separate long-running function ──
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  // VERCEL_URL is set automatically by Vercel (e.g. "video-editing-tool.vercel.app")
+  // Fall back to NEXT_PUBLIC_APP_URL for local dev
+  const appUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000");
   fetch(`${appUrl}/api/projects/${project.id}/run-transcription`, {
     method:  "POST",
     headers: {
