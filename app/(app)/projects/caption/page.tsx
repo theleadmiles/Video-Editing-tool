@@ -6,69 +6,120 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
 import {
   ChevronLeft, Upload, Film, Captions,
   CheckCircle2, Loader2, Globe, Ratio,
   FileVideo, X, Sparkles,
 } from "lucide-react";
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+
 const LANGUAGES = [
-  { value: "English", label: "English", flag: "🇬🇧" },
-  { value: "Hindi", label: "हिन्दी", flag: "🇮🇳" },
-  { value: "Tamil", label: "தமிழ்", flag: "🇮🇳" },
-  { value: "Telugu", label: "తెలుగు", flag: "🇮🇳" },
-  { value: "Bengali", label: "বাংলা", flag: "🇮🇳" },
-  { value: "Kannada", label: "ಕನ್ನಡ", flag: "🇮🇳" },
-  { value: "Marathi", label: "मराठी", flag: "🇮🇳" },
-  { value: "Punjabi", label: "ਪੰਜਾਬੀ", flag: "🇮🇳" },
-  { value: "Malayalam", label: "മലയാളം", flag: "🇮🇳" },
-  { value: "Gujarati", label: "ગુજરાતી", flag: "🇮🇳" },
+  { value: "English",   label: "English",    flag: "🇬🇧" },
+  { value: "Hindi",     label: "हिन्दी",      flag: "🇮🇳" },
+  { value: "Tamil",     label: "தமிழ்",      flag: "🇮🇳" },
+  { value: "Telugu",    label: "తెలుగు",     flag: "🇮🇳" },
+  { value: "Bengali",   label: "বাংলা",       flag: "🇮🇳" },
+  { value: "Kannada",   label: "ಕನ್ನಡ",      flag: "🇮🇳" },
+  { value: "Marathi",   label: "मराठी",       flag: "🇮🇳" },
+  { value: "Punjabi",   label: "ਪੰਜਾਬੀ",     flag: "🇮🇳" },
+  { value: "Malayalam", label: "മലയാളം",     flag: "🇮🇳" },
+  { value: "Gujarati",  label: "ગુજરાતી",    flag: "🇮🇳" },
 ];
 
 const ASPECT_RATIOS = [
-  { value: "9:16", label: "9:16", desc: "Reels / Shorts", icon: "▯" },
-  { value: "16:9", label: "16:9", desc: "YouTube", icon: "▭" },
-  { value: "1:1", label: "1:1", desc: "Feed post", icon: "□" },
+  { value: "9:16",  label: "9:16",  desc: "Reels / Shorts", icon: "▯" },
+  { value: "16:9",  label: "16:9",  desc: "YouTube",        icon: "▭" },
+  { value: "1:1",   label: "1:1",   desc: "Feed post",      icon: "□" },
 ];
-
-type Stage = "idle" | "uploading" | "transcribing" | "done";
 
 const ACCEPTED_TYPES = [
   "video/mp4", "video/quicktime", "video/webm", "video/x-matroska",
-  "audio/mpeg", "audio/mp3", "audio/wav",
 ];
-const ACCEPTED_EXT = ".mp4,.mov,.webm,.mkv,.mp3,.wav";
-const MAX_SIZE_MB = 25;
-const MAX_SIZE = MAX_SIZE_MB * 1024 * 1024;
+const ACCEPTED_EXT = ".mp4,.mov,.webm,.mkv";
+const MAX_SIZE_BYTES = 200 * 1024 * 1024; // 200 MB
 
-function formatBytes(bytes: number) {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+// ── Audio extraction ──────────────────────────────────────────────────────────
+
+/** Extracts audio from a video file as 16 kHz mono WAV using the browser's
+ *  OfflineAudioContext — runs faster than real-time, no server needed. */
+async function extractAudioWAV(file: File): Promise<File> {
+  const arrayBuffer = await file.arrayBuffer();
+
+  // Decode via a throw-away AudioContext
+  const tmpCtx = new AudioContext();
+  const decoded = await tmpCtx.decodeAudioData(arrayBuffer);
+  await tmpCtx.close();
+
+  // Resample to 16 kHz mono (optimal for Whisper, small file size)
+  const TARGET_RATE = 16_000;
+  const offCtx = new OfflineAudioContext(
+    1,
+    Math.ceil(decoded.duration * TARGET_RATE),
+    TARGET_RATE,
+  );
+  const src = offCtx.createBufferSource();
+  src.buffer = decoded;
+  src.connect(offCtx.destination);
+  src.start();
+  const mono16 = await offCtx.startRendering();
+
+  return new File([pcmToWav(mono16)], "audio.wav", { type: "audio/wav" });
 }
 
-export default function CaptionPage() {
-  const router = useRouter();
-  const inputRef = useRef<HTMLInputElement>(null);
+function pcmToWav(buf: AudioBuffer): ArrayBuffer {
+  const samples = buf.getChannelData(0);
+  const out = new ArrayBuffer(44 + samples.length * 2);
+  const v = new DataView(out);
+  const str = (off: number, s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
+  str(0, "RIFF"); v.setUint32(4, 36 + samples.length * 2, true);
+  str(8, "WAVE"); str(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, buf.sampleRate, true); v.setUint32(28, buf.sampleRate * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, "data"); v.setUint32(40, samples.length * 2, true);
+  let off = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    off += 2;
+  }
+  return out;
+}
 
-  const [file, setFile] = useState<File | null>(null);
-  const [title, setTitle] = useState("");
-  const [language, setLanguage] = useState("English");
-  const [aspectRatio, setAspectRatio] = useState("9:16");
-  const [stage, setStage] = useState<Stage>("idle");
-  const [isDragging, setIsDragging] = useState(false);
+function formatBytes(b: number) {
+  return b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type Stage = "idle" | "extracting" | "uploading" | "transcribing" | "done";
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export default function CaptionPage() {
+  const router   = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const supabase = createClient();
+
+  const [file,         setFile]         = useState<File | null>(null);
+  const [title,        setTitle]        = useState("");
+  const [language,     setLanguage]     = useState("English");
+  const [aspectRatio,  setAspectRatio]  = useState("9:16");
+  const [stage,        setStage]        = useState<Stage>("idle");
+  const [isDragging,   setIsDragging]   = useState(false);
+  const [uploadPct,    setUploadPct]    = useState(0);
   const [captionCount, setCaptionCount] = useState(0);
 
-  // ── File selection ────────────────────────────────────────────────────────
+  // ── File selection ──────────────────────────────────────────────────────────
   function selectFile(f: File) {
     if (!ACCEPTED_TYPES.includes(f.type)) {
-      toast.error("Unsupported format. Please upload MP4, MOV, WebM, MP3, or WAV.");
+      toast.error("Please upload an MP4, MOV, or WebM video.");
       return;
     }
-    if (f.size > MAX_SIZE) {
-      toast.error(
-        `File is ${formatBytes(f.size)} — max is ${MAX_SIZE_MB} MB. Compress it first (HandBrake or Clideo work great).`,
-        { duration: 6000 }
-      );
+    if (f.size > MAX_SIZE_BYTES) {
+      toast.error(`File is ${formatBytes(f.size)} — max is 200 MB.`);
       return;
     }
     setFile(f);
@@ -86,61 +137,108 @@ export default function CaptionPage() {
     setIsDragging(false);
     const f = e.dataTransfer.files?.[0];
     if (f) selectFile(f);
-  }, [title]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title]);
 
-  const onDragOver = (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); setIsDragging(true); };
+  const onDragOver  = (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); setIsDragging(true); };
   const onDragLeave = () => setIsDragging(false);
 
-  // ── Submit ────────────────────────────────────────────────────────────────
+  // ── Submit ──────────────────────────────────────────────────────────────────
   async function handleSubmit() {
     if (!file) { toast.error("Please select a video first"); return; }
 
-    setStage("uploading");
-
     try {
-      const form = new FormData();
-      form.append("file", file);
-      form.append("title", title || file.name.replace(/\.[^.]+$/, ""));
-      form.append("language", language);
-      form.append("aspect_ratio", aspectRatio);
+      // ── Stage 1: Extract audio ────────────────────────────────────────────
+      setStage("extracting");
+      let audioFile: File;
+      try {
+        audioFile = await extractAudioWAV(file);
+      } catch {
+        toast.error("Could not read audio from this video. Make sure it has a valid audio track.");
+        setStage("idle");
+        return;
+      }
 
-      // The transcribe route handles upload + transcription in one shot.
-      // We fake two visual stages: "uploading" for the first ~2s then "transcribing".
-      const timer = setTimeout(() => setStage("transcribing"), 2000);
+      // Whisper limit is 25 MB. 16 kHz mono WAV ≈ 32 KB/s → ~13 min max.
+      const WHISPER_LIMIT = 25 * 1024 * 1024;
+      if (audioFile.size > WHISPER_LIMIT) {
+        toast.error(
+          `Audio track is ${formatBytes(audioFile.size)} after extraction — Whisper's limit is 25 MB (~13 min of audio). Please trim your video to under 13 minutes.`,
+          { duration: 8000 }
+        );
+        setStage("idle");
+        return;
+      }
 
-      const res = await fetch("/api/projects/transcribe", {
+      // ── Stage 2: Upload video directly to Supabase (no Vercel in the loop) ─
+      setStage("uploading");
+      setUploadPct(0);
+
+      // Get a signed upload URL from our server
+      const urlRes = await fetch("/api/storage/upload-url", {
         method: "POST",
-        body: form,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, content_type: file.type }),
+      });
+      const urlData = await urlRes.json();
+      if (!urlRes.ok) throw new Error(urlData.error ?? "Could not get upload URL");
+
+      const { path, token, public_url: videoUrl } = urlData as {
+        signed_url: string; path: string; token: string; public_url: string;
+      };
+
+      // Upload the video directly to Supabase (large file — no Vercel in the loop)
+      // Progress via XHR since the Supabase SDK doesn't expose onUploadProgress in all versions
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", urlData.signed_url);
+        xhr.setRequestHeader("Content-Type", file.type);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setUploadPct(Math.round((e.loaded / e.total) * 100));
+        };
+        xhr.onload  = () => xhr.status < 300 ? resolve() : reject(new Error(`Upload failed (${xhr.status})`));
+        xhr.onerror = () => reject(new Error("Upload network error"));
+        xhr.send(file);
       });
 
-      clearTimeout(timer);
-      const data = await res.json();
+      // ── Stage 3: Transcribe via our API (only sends small audio file) ──────
+      setStage("transcribing");
 
-      if (!res.ok) {
-        throw new Error(data.error ?? "Something went wrong");
-      }
+      const form = new FormData();
+      form.append("audio",        audioFile);
+      form.append("video_url",    videoUrl);
+      form.append("title",        title || file.name.replace(/\.[^.]+$/, ""));
+      form.append("language",     language);
+      form.append("aspect_ratio", aspectRatio);
+
+      const res  = await fetch("/api/projects/transcribe", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Transcription failed");
 
       setCaptionCount(data.captionCount ?? 0);
       setStage("done");
-
-      setTimeout(() => {
-        router.push(`/projects/${data.projectId}/edit`);
-      }, 1200);
+      setTimeout(() => router.push(`/projects/${data.projectId}/edit`), 1200);
 
     } catch (err) {
       setStage("idle");
-      toast.error(err instanceof Error ? err.message : "Upload failed. Please try again.");
+      toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     }
   }
 
-  // ── Loading screen ────────────────────────────────────────────────────────
-  if (stage === "uploading" || stage === "transcribing" || stage === "done") {
+  // ── Progress screen ─────────────────────────────────────────────────────────
+  if (stage !== "idle") {
     const steps = [
-      { key: "uploading", label: "Uploading your video", icon: "☁️" },
-      { key: "transcribing", label: "Transcribing audio with AI", icon: "🎙️" },
-      { key: "done", label: stage === "done" ? `${captionCount} captions ready!` : "Building caption timeline", icon: "✨" },
+      { key: "extracting",   label: "Extracting audio track",        icon: "🎵" },
+      { key: "uploading",    label: stage === "uploading"
+                                      ? `Uploading video… ${uploadPct}%`
+                                      : "Uploading video",              icon: "☁️" },
+      { key: "transcribing", label: "Transcribing with AI",           icon: "🎙️" },
+      { key: "done",         label: stage === "done"
+                                      ? `${captionCount} captions ready!`
+                                      : "Building caption timeline",    icon: "✨" },
     ];
-    const activeIndex = stage === "uploading" ? 0 : stage === "transcribing" ? 1 : 2;
+    const ORDER  = ["extracting", "uploading", "transcribing", "done"] as const;
+    const active = ORDER.indexOf(stage as typeof ORDER[number]);
 
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-8 bg-base">
@@ -148,8 +246,7 @@ export default function CaptionPage() {
           <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-gold-500/15">
             {stage === "done"
               ? <CheckCircle2 className="h-10 w-10 text-green-400" />
-              : <Loader2 className="h-10 w-10 text-gold-500 animate-spin" />
-            }
+              : <Loader2 className="h-10 w-10 text-gold-500 animate-spin" />}
           </div>
           <h2 className="font-display text-2xl font-bold text-white mb-1">
             {stage === "done" ? "Captions ready!" : "Working on it…"}
@@ -157,26 +254,26 @@ export default function CaptionPage() {
           <p className="text-sm text-subtle mb-8">
             {stage === "done"
               ? "Opening your editor…"
-              : "This usually takes 10–30 seconds depending on video length."}
+              : "Hang tight — this takes 15–60 seconds depending on video length."}
           </p>
 
           <div className="space-y-2.5">
             {steps.map((s, i) => {
-              const isDone = i < activeIndex;
-              const isCurrent = i === activeIndex;
+              const isDone    = i < active;
+              const isCurrent = i === active;
               return (
                 <div
                   key={s.key}
                   className={cn(
                     "flex items-center gap-3 rounded-xl border p-3 text-sm transition-all duration-500",
-                    isDone && "border-green-500/20 bg-green-500/5 text-green-400",
+                    isDone    && "border-green-500/20 bg-green-500/5 text-green-400",
                     isCurrent && "border-gold-500/30 bg-gold-500/10 text-gold-400",
                     !isDone && !isCurrent && "border-border bg-surface text-muted"
                   )}
                 >
                   <span className="text-base">{s.icon}</span>
                   <span className="flex-1 text-left font-medium">{s.label}</span>
-                  {isDone && <CheckCircle2 className="h-4 w-4 text-green-400" />}
+                  {isDone    && <CheckCircle2 className="h-4 w-4 text-green-400" />}
                   {isCurrent && stage !== "done" && (
                     <div className="h-4 w-4 rounded-full border-2 border-gold-500 border-t-transparent animate-spin" />
                   )}
@@ -185,25 +282,35 @@ export default function CaptionPage() {
               );
             })}
           </div>
+
+          {/* Upload progress bar */}
+          {stage === "uploading" && (
+            <div className="mt-5 space-y-1.5">
+              <div className="h-1.5 w-full rounded-full bg-overlay overflow-hidden">
+                <div
+                  className="h-1.5 rounded-full bg-gradient-gold transition-all duration-300"
+                  style={{ width: `${uploadPct}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted">{uploadPct}% uploaded</p>
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
-  // ── Main form ─────────────────────────────────────────────────────────────
+  // ── Main form ───────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen p-8">
       <div className="mx-auto max-w-xl">
-        {/* Back link */}
         <Link
           href="/projects/new"
           className="mb-6 inline-flex items-center gap-1.5 text-sm text-subtle hover:text-white transition-colors"
         >
-          <ChevronLeft className="h-4 w-4" />
-          Back
+          <ChevronLeft className="h-4 w-4" /> Back
         </Link>
 
-        {/* Header */}
         <div className="mb-8">
           <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gold-500/15">
             <Captions className="h-6 w-6 text-gold-500" />
@@ -215,6 +322,7 @@ export default function CaptionPage() {
         </div>
 
         <div className="space-y-6">
+
           {/* Drop zone */}
           <div>
             <label className="mb-2 block text-sm font-medium text-subtle">Video file</label>
@@ -225,20 +333,12 @@ export default function CaptionPage() {
               onDragLeave={onDragLeave}
               className={cn(
                 "relative flex min-h-[160px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 text-center transition-all",
-                isDragging
-                  ? "border-gold-500 bg-gold-500/10"
-                  : file
-                  ? "border-green-500/40 bg-green-500/5 cursor-default"
-                  : "border-border hover:border-gold-500/50 hover:bg-gold-500/5"
+                isDragging  ? "border-gold-500 bg-gold-500/10"
+                : file      ? "border-green-500/40 bg-green-500/5 cursor-default"
+                            : "border-border hover:border-gold-500/50 hover:bg-gold-500/5"
               )}
             >
-              <input
-                ref={inputRef}
-                type="file"
-                accept={ACCEPTED_EXT}
-                onChange={onFileChange}
-                className="sr-only"
-              />
+              <input ref={inputRef} type="file" accept={ACCEPTED_EXT} onChange={onFileChange} className="sr-only" />
 
               {file ? (
                 <div className="flex w-full items-center gap-3">
@@ -260,33 +360,21 @@ export default function CaptionPage() {
               ) : (
                 <>
                   <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-elevated">
-                    {isDragging
-                      ? <Film className="h-6 w-6 text-gold-500" />
-                      : <Upload className="h-6 w-6 text-subtle" />
-                    }
+                    {isDragging ? <Film className="h-6 w-6 text-gold-500" /> : <Upload className="h-6 w-6 text-subtle" />}
                   </div>
                   <p className="text-sm font-medium text-white">
                     {isDragging ? "Drop it here" : "Drop your video here"}
                   </p>
                   <p className="mt-1 text-xs text-muted">or click to browse</p>
-                  <p className="mt-3 text-[11px] text-muted">
-                    MP4, MOV, WebM · max {MAX_SIZE_MB} MB
-                  </p>
+                  <p className="mt-3 text-[11px] text-muted">MP4, MOV, WebM · up to 200 MB</p>
                 </>
               )}
             </div>
 
-            {/* Size hint */}
-            {!file && (
-              <p className="mt-2 text-xs text-muted flex items-start gap-1.5">
-                <span className="text-gold-500 flex-shrink-0">💡</span>
-                File too big? Compress with{" "}
-                <a href="https://www.handbrake.fr" target="_blank" rel="noopener noreferrer" className="text-gold-500 hover:underline">HandBrake</a>{" "}
-                (free) or{" "}
-                <a href="https://clideo.com/compress-video" target="_blank" rel="noopener noreferrer" className="text-gold-500 hover:underline">Clideo</a>{" "}
-                (online).
-              </p>
-            )}
+            <p className="mt-2 text-xs text-muted flex items-start gap-1.5">
+              <span className="text-gold-500 flex-shrink-0">💡</span>
+              Audio is extracted in your browser before uploading — your video goes straight to storage, not through our server.
+            </p>
           </div>
 
           {/* Title */}
@@ -364,31 +452,21 @@ export default function CaptionPage() {
               <Sparkles className="h-3 w-3 text-gold-500" /> What happens next
             </p>
             <ul className="space-y-1.5 text-sm text-subtle">
-              <li className="flex items-start gap-2">
-                <span className="text-gold-500 flex-shrink-0">✓</span>
-                AI transcribes every word with timestamps
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-gold-500 flex-shrink-0">✓</span>
-                Captions are synced to the exact moment each word is spoken
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-gold-500 flex-shrink-0">✓</span>
-                Edit text, style, position, and timing in the editor
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-gold-500 flex-shrink-0">✓</span>
-                Change fonts, colours, and animations per caption
-              </li>
+              {[
+                "Audio is extracted in your browser (fast, private)",
+                "Video uploads directly to storage — no server detour",
+                "AI transcribes every word with exact timestamps",
+                "Captions land in the editor, ready to style and export",
+              ].map((t) => (
+                <li key={t} className="flex items-start gap-2">
+                  <span className="text-gold-500 flex-shrink-0 mt-0.5">✓</span>
+                  {t}
+                </li>
+              ))}
             </ul>
           </div>
 
-          <Button
-            className="w-full"
-            size="lg"
-            disabled={!file}
-            onClick={handleSubmit}
-          >
+          <Button className="w-full" size="lg" disabled={!file} onClick={handleSubmit}>
             <Captions className="h-4 w-4" />
             Generate captions
           </Button>
