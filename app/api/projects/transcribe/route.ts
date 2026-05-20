@@ -37,18 +37,31 @@ export async function POST(req: NextRequest) {
   if (!workspace) return NextResponse.json({ error: "No workspace" }, { status: 404 });
 
   const form         = await req.formData();
-  const audioFile    = form.get("audio")        as File   | null;
-  const videoUrl     = String(form.get("video_url")    ?? "");
-  const languageName = String(form.get("language")     ?? "");
-  const titleInput   = String(form.get("title")        ?? "");
-  const aspectRatio  = String(form.get("aspect_ratio") ?? "9:16") as "9:16" | "16:9" | "1:1" | "4:5";
+  const audioUrl     = String(form.get("audio_url")     ?? "");
+  const videoUrl     = String(form.get("video_url")     ?? "");
+  const languageName = String(form.get("language")      ?? "");
+  const titleInput   = String(form.get("title")         ?? "");
+  const aspectRatio  = String(form.get("aspect_ratio")  ?? "9:16") as "9:16" | "16:9" | "1:1" | "4:5";
 
-  if (!audioFile) return NextResponse.json({ error: "No audio file provided" }, { status: 400 });
-  if (!videoUrl)  return NextResponse.json({ error: "video_url required" },     { status: 400 });
+  if (!audioUrl) return NextResponse.json({ error: "audio_url required" }, { status: 400 });
+  if (!videoUrl) return NextResponse.json({ error: "video_url required" }, { status: 400 });
 
-  if (audioFile.size > WHISPER_MAX) {
+  // ── Fetch audio from R2 (fast — same network, no browser upload limit) ────
+  let audioBuffer: Buffer;
+  try {
+    const audioRes = await fetch(audioUrl);
+    if (!audioRes.ok) throw new Error(`Could not fetch audio from storage (${audioRes.status})`);
+    audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+  } catch (err) {
     return NextResponse.json(
-      { error: `Audio is ${(audioFile.size / 1024 / 1024).toFixed(1)} MB — Whisper's limit is 25 MB. Trim your video to under ~13 minutes.` },
+      { error: err instanceof Error ? err.message : "Failed to fetch audio" },
+      { status: 500 }
+    );
+  }
+
+  if (audioBuffer.length > WHISPER_MAX) {
+    return NextResponse.json(
+      { error: `Audio is ${(audioBuffer.length / 1024 / 1024).toFixed(1)} MB — Whisper's limit is 25 MB. Trim your video to under ~13 minutes.` },
       { status: 413 }
     );
   }
@@ -58,8 +71,7 @@ export async function POST(req: NextRequest) {
   let totalDuration = 30;
 
   try {
-    const buffer    = Buffer.from(await audioFile.arrayBuffer());
-    const wFile     = await toFile(buffer, "audio.wav", { type: "audio/wav" });
+    const wFile     = await toFile(audioBuffer, "audio.wav", { type: "audio/wav" });
     const langCode  = LANGUAGE_CODES[languageName] ?? "";
 
     const transcription = await openrouter.audio.transcriptions.create({

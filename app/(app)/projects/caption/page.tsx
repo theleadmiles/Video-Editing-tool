@@ -183,49 +183,57 @@ export default function CaptionPage() {
         return;
       }
 
-      // ── Stage 2: Upload video directly to Supabase (no Vercel in the loop) ─
+      // ── Stage 2: Upload video + audio directly to R2 (no Vercel in the loop) ─
       setStage("uploading");
       setUploadPct(0);
 
-      // Get a signed upload URL from our server
-      const urlRes = await fetch("/api/storage/upload-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name, content_type: file.type }),
-      });
-      const urlData = await urlRes.json();
-      if (!urlRes.ok) throw new Error(urlData.error ?? "Could not get upload URL");
+      // Helper: get a presigned R2 URL for any file
+      async function getR2Url(f: File, suffix: string) {
+        const r = await fetch("/api/storage/upload-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: suffix, content_type: f.type }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error ?? "Could not get upload URL");
+        return d as { signed_url: string; public_url: string };
+      }
 
-      const { signed_url: signedUrl, public_url: videoUrl } = urlData as {
-        signed_url: string; public_url: string;
-      };
-
-      // Upload directly to Cloudflare R2 via presigned URL — no size limits
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", signedUrl);
-        xhr.setRequestHeader("Content-Type", file.type);
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) setUploadPct(Math.round((e.loaded / e.total) * 100));
-        };
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve();
-          } else {
-            reject(new Error(`Upload failed (${xhr.status}): ${xhr.responseText?.slice(0, 200) || "R2 rejected the upload"}`));
+      // Helper: XHR PUT to R2 with progress
+      async function r2Put(f: File, signedUrl: string, onProgress?: (pct: number) => void) {
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", signedUrl);
+          xhr.setRequestHeader("Content-Type", f.type);
+          if (onProgress) {
+            xhr.upload.onprogress = (e) => {
+              if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+            };
           }
-        };
-        xhr.onerror = () => reject(new Error("Network error — check R2 CORS settings or bucket name"));
-        xhr.send(file);
-      });
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error(`Upload failed (${xhr.status}): ${xhr.responseText?.slice(0, 200) || "R2 rejected the upload"}`));
+          };
+          xhr.onerror = () => reject(new Error("Network error during upload — check your connection"));
+          xhr.send(f);
+        });
+      }
+
+      // Upload video to R2 (with progress bar)
+      const videoUrlData = await getR2Url(file, file.name);
+      await r2Put(file, videoUrlData.signed_url, setUploadPct);
       setUploadPct(100);
 
-      // ── Stage 3: Transcribe via our API (only sends small audio file) ──────
+      // Upload audio to R2 (no progress needed — it's small)
+      const audioUrlData = await getR2Url(audioFile, "audio.wav");
+      await r2Put(audioFile, audioUrlData.signed_url);
+
+      // ── Stage 3: Transcribe — server fetches audio from R2 (tiny JSON request) ─
       setStage("transcribing");
 
       const form = new FormData();
-      form.append("audio",        audioFile);
-      form.append("video_url",    videoUrl);
+      form.append("audio_url",    audioUrlData.public_url);
+      form.append("video_url",    videoUrlData.public_url);
       form.append("title",        title || file.name.replace(/\.[^.]+$/, ""));
       form.append("language",     language);
       form.append("aspect_ratio", aspectRatio);
