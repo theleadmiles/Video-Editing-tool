@@ -1,9 +1,5 @@
-import OpenAI from "openai";
 import { toFile } from "openai";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-});
+import { openrouter } from "./openrouter";
 
 export interface Caption {
   text: string;
@@ -14,14 +10,13 @@ export interface Caption {
 export async function generateCaptions(audioBuffer: Buffer): Promise<Caption[]> {
   const file = await toFile(audioBuffer, "voiceover.mp3", { type: "audio/mpeg" });
 
-  const transcription = await openai.audio.transcriptions.create({
+  const transcription = await openrouter.audio.transcriptions.create({
     file,
-    model: "whisper-1",
+    model: "openai/whisper-1",
     response_format: "verbose_json",
     timestamp_granularities: ["word"],
   });
 
-  // Group words into caption chunks (max 5 words per caption)
   const words = (transcription as { words?: { word: string; start: number; end: number }[] }).words || [];
 
   if (!words.length) {

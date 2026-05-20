@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import OpenAI, { toFile } from "openai";
+import { toFile } from "openai";
+import { openrouter } from "@/lib/ai/openrouter";
 
 export const maxDuration = 120;
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
 // Whisper limit is 25 MB. Client extracts 16 kHz mono WAV before sending,
 // so the actual payload here is always small regardless of original video size.
@@ -63,9 +62,9 @@ export async function POST(req: NextRequest) {
     const wFile     = await toFile(buffer, "audio.wav", { type: "audio/wav" });
     const langCode  = LANGUAGE_CODES[languageName] ?? "";
 
-    const transcription = await openai.audio.transcriptions.create({
+    const transcription = await openrouter.audio.transcriptions.create({
       file: wFile,
-      model: "whisper-1",
+      model: "openai/whisper-1",
       response_format: "verbose_json",
       timestamp_granularities: ["word"],
       ...(langCode ? { language: langCode } : {}),
