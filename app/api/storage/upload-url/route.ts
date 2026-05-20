@@ -24,6 +24,28 @@ function r2Client() {
 }
 
 export async function POST(req: NextRequest) {
+  // ── Validate R2 env vars are present ────────────────────────────────────────
+  const accountId  = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const accessKey  = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
+  const secretKey  = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
+  const bucketName = process.env.CLOUDFLARE_R2_BUCKET_NAME;
+  const publicUrl  = process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
+
+  const missing = [
+    !accountId  && "CLOUDFLARE_ACCOUNT_ID",
+    !accessKey  && "CLOUDFLARE_R2_ACCESS_KEY_ID",
+    !secretKey  && "CLOUDFLARE_R2_SECRET_ACCESS_KEY",
+    !bucketName && "CLOUDFLARE_R2_BUCKET_NAME",
+    !publicUrl  && "NEXT_PUBLIC_R2_PUBLIC_URL",
+  ].filter(Boolean);
+
+  if (missing.length) {
+    return NextResponse.json(
+      { error: `Missing R2 env vars: ${missing.join(", ")}` },
+      { status: 500 }
+    );
+  }
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -40,18 +62,16 @@ export async function POST(req: NextRequest) {
 
   const safe   = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
   const key    = `${workspace.id}/videos/${Date.now()}-${safe}`;
-  const bucket = process.env.CLOUDFLARE_R2_BUCKET_NAME!;
 
   try {
-    const command   = new PutObjectCommand({ Bucket: bucket, Key: key, ContentType: content_type });
+    const command   = new PutObjectCommand({ Bucket: bucketName, Key: key, ContentType: content_type });
     const signedUrl = await getSignedUrl(r2Client(), command, { expiresIn: 3600 });
-    const publicUrl = `${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}/${key}`;
+    const vidUrl    = `${publicUrl}/${key}`;
 
-    return NextResponse.json({ signed_url: signedUrl, public_url: publicUrl });
+    return NextResponse.json({ signed_url: signedUrl, public_url: vidUrl });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Could not create upload URL" },
-      { status: 500 }
-    );
+    const msg = err instanceof Error ? err.message : "Could not create upload URL";
+    console.error("R2 presign error:", msg);
+    return NextResponse.json({ error: `R2 error: ${msg}` }, { status: 500 });
   }
 }
