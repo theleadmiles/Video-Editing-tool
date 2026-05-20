@@ -193,8 +193,14 @@ export default function CaptionPage() {
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) setUploadPct(Math.round((e.loaded / e.total) * 100));
         };
-        xhr.onload  = () => (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error(`Upload failed (${xhr.status})`));
-        xhr.onerror = () => reject(new Error("Network error during upload"));
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error(`Upload failed (${xhr.status}): ${xhr.responseText?.slice(0, 200) || "R2 rejected the upload"}`));
+          }
+        };
+        xhr.onerror = () => reject(new Error("Network error — check R2 CORS settings or bucket name"));
         xhr.send(file);
       });
       setUploadPct(100);
