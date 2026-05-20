@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
-import { toFile } from "openai";
-import { openrouter } from "@/lib/ai/openrouter";
 
 export const maxDuration = 120;
 
@@ -23,8 +21,8 @@ function adminClient() {
 
 /**
  * POST /api/projects/[id]/run-transcription
- * Called internally by the transcribe route. Does the actual Whisper work
- * and updates the project when done. Protected by CRON_SECRET.
+ * Called directly from the browser's ProcessingScreen.
+ * Uses plain fetch to OpenRouter — no OpenAI SDK, no module init issues.
  */
 export async function POST(
   req: NextRequest,
@@ -36,7 +34,8 @@ export async function POST(
   const admin = adminClient();
 
   try {
-    if (!process.env.OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not set in Vercel environment variables");
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set in Vercel environment variables");
 
     // 1. Fetch audio from R2
     console.log(`[run-transcription] fetching audio from ${audioUrl}`);
@@ -49,18 +48,35 @@ export async function POST(
       throw new Error(`Audio is ${(audioBuffer.length / 1024 / 1024).toFixed(1)} MB — max 25 MB (~13 min)`);
     }
 
-    // 2. Transcribe with Whisper
+    // 2. Transcribe with Whisper via plain fetch (no OpenAI SDK)
     console.log(`[run-transcription] calling Whisper via OpenRouter`);
-    const wFile    = await toFile(audioBuffer, "audio.wav", { type: "audio/wav" });
     const langCode = LANGUAGE_CODES[languageName] ?? "";
 
-    const transcription = await openrouter.audio.transcriptions.create({
-      file:   wFile,
-      model:  "openai/whisper-1",
-      response_format: "verbose_json",
-      timestamp_granularities: ["word"],
-      ...(langCode ? { language: langCode } : {}),
-    }) as { text: string; duration?: number; words?: { word: string; start: number; end: number }[] };
+    const formData = new FormData();
+    formData.append("file", new Blob([audioBuffer], { type: "audio/wav" }), "audio.wav");
+    formData.append("model", "openai/whisper-1");
+    formData.append("response_format", "verbose_json");
+    formData.append("timestamp_granularities[]", "word");
+    if (langCode) formData.append("language", langCode);
+
+    const whisperRes = await fetch("https://openrouter.ai/api/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: formData,
+    });
+
+    if (!whisperRes.ok) {
+      const errText = await whisperRes.text();
+      throw new Error(`OpenRouter Whisper failed: HTTP ${whisperRes.status} — ${errText}`);
+    }
+
+    const transcription = await whisperRes.json() as {
+      text: string;
+      duration?: number;
+      words?: { word: string; start: number; end: number }[];
+    };
 
     const words         = transcription.words ?? [];
     const totalDuration = transcription.duration ?? (words.length > 0 ? words[words.length - 1].end : 30);
