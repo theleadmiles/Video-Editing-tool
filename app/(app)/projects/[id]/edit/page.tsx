@@ -6,10 +6,13 @@ import { ProcessingScreen } from "@/components/editor/processing-screen";
 
 export default async function EditProjectPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string>>;
 }) {
-  const { id } = await params;
+  const { id }  = await params;
+  const sp      = await searchParams;
   const supabase = await createClient();
 
   const { data: project } = await supabase
@@ -20,16 +23,28 @@ export default async function EditProjectPage({
 
   if (!project) notFound();
 
-  // Show a polling screen while transcription runs in the background
+  // Show processing screen while transcription runs in the background
   if (project.status === "processing" || project.status === "error") {
-    return <ProcessingScreen project={project} />;
+    return (
+      <ProcessingScreen
+        project={project}
+        transcriptionJob={
+          sp.audioUrl
+            ? {
+                audioUrl:    sp.audioUrl,
+                videoUrl:    sp.videoUrl,
+                language:    sp.language,
+                aspectRatio: sp.aspectRatio,
+              }
+            : undefined
+        }
+      />
+    );
   }
 
   return (
     <>
-      {/* Mobile fallback — shown only below md */}
       <MobileEditorBlocker project={project} />
-      {/* Desktop editor — hidden below md */}
       <div className="hidden md:block">
         <ProjectEditor project={project} />
       </div>

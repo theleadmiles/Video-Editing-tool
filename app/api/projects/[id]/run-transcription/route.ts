@@ -30,12 +30,6 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  // Internal auth — same secret used for cron jobs
-  const auth = req.headers.get("authorization");
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const { id: projectId } = await params;
   const { audioUrl, videoUrl, languageName, aspectRatio, workspaceId } = await req.json();
 

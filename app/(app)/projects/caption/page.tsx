@@ -242,12 +242,19 @@ export default function CaptionPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Transcription failed");
 
-      // Server returns immediately — transcription runs in the background.
-      // The editor page will poll until it's ready.
+      // Server returns immediately with projectId + transcription params.
+      // Pass them to the editor via query string so ProcessingScreen can
+      // call run-transcription directly from the browser.
       setStage("done");
       window.removeEventListener("beforeunload", handleBeforeUnload);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      setTimeout(() => router.push(`/projects/${data.projectId}/edit`), 800);
+      const params = new URLSearchParams({
+        audioUrl:    data.audioUrl,
+        videoUrl:    data.videoUrl,
+        language:    data.languageName,
+        aspectRatio: data.aspectRatio,
+      });
+      setTimeout(() => router.push(`/projects/${data.projectId}/edit?${params}`), 800);
 
     } catch (err) {
       window.removeEventListener("beforeunload", handleBeforeUnload);

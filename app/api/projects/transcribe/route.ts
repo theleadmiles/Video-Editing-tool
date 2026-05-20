@@ -51,23 +51,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: projectError?.message ?? "Failed to create project" }, { status: 500 });
   }
 
-  // ── Fire-and-forget: kick off transcription in a separate long-running function ──
-  // VERCEL_URL is set automatically by Vercel (e.g. "video-editing-tool.vercel.app")
-  // Fall back to NEXT_PUBLIC_APP_URL for local dev
-  const appUrl = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000");
-  fetch(`${appUrl}/api/projects/${project.id}/run-transcription`, {
-    method:  "POST",
-    headers: {
-      "Content-Type":  "application/json",
-      "Authorization": `Bearer ${process.env.CRON_SECRET}`,
-    },
-    body: JSON.stringify({ audioUrl, videoUrl, languageName, aspectRatio, workspaceId: workspace.id }),
-  }).catch(err => {
-    console.error(`[transcribe] failed to kick off run-transcription for ${project.id}:`, err);
+  // Return project ID + all params needed for the browser to call run-transcription directly.
+  // The ProcessingScreen will POST to /api/projects/[id]/run-transcription from the browser,
+  // keeping the connection alive without relying on server-side fire-and-forget.
+  return NextResponse.json({
+    projectId:    project.id,
+    audioUrl,
+    videoUrl,
+    languageName,
+    aspectRatio,
+    workspaceId:  workspace.id,
   });
-
-  // Return immediately — transcription runs independently
-  return NextResponse.json({ projectId: project.id });
 }
