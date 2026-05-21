@@ -79,6 +79,7 @@ interface UploadedClip {
   thumbnail: string;
   duration: number;
   uploading: boolean;
+  uploadProgress: number; // 0–1
   error?: string;
 }
 
@@ -99,17 +100,49 @@ export default function ReelCreatorPage() {
 
   // ── Upload ────────────────────────────────────────────────────────────────
 
-  async function uploadOneClip(file: File): Promise<{ url: string } | null> {
-    const form = new FormData();
-    form.append("file", file);
-    form.append("kind", "video");
+  /**
+   * Upload a video clip directly to Cloudflare R2 via a presigned URL.
+   * This completely bypasses Vercel's serverless body-size limit (~4.5 MB)
+   * so large video files work without issues.
+   */
+  async function uploadOneClip(
+    file: File,
+    clipId: string,
+  ): Promise<{ url: string } | null> {
     try {
-      const res = await fetch("/api/upload-asset", { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Upload failed");
-      return data;
+      // Step 1 — get a short-lived presigned R2 PUT URL from our API
+      const urlRes = await fetch("/api/storage/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, content_type: file.type }),
+      });
+      const urlData = await urlRes.json();
+      if (!urlRes.ok) throw new Error(urlData.error || "Could not get upload URL");
+
+      const { signed_url, public_url } = urlData as { signed_url: string; public_url: string };
+
+      // Step 2 — PUT the file directly to R2 (browser → R2, no Vercel middleman)
+      // Use XHR so we can track real upload progress
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", signed_url);
+        xhr.setRequestHeader("Content-Type", file.type);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = e.loaded / e.total;
+            setClips((prev) =>
+              prev.map((c) => c.id === clipId ? { ...c, uploadProgress: pct } : c)
+            );
+          }
+        };
+        xhr.onload  = () => xhr.status < 300 ? resolve() : reject(new Error(`Upload failed (${xhr.status})`));
+        xhr.onerror = () => reject(new Error("Network error — check your connection"));
+        xhr.send(file);
+      });
+
+      return { url: public_url };
     } catch (e) {
-      console.error(e);
+      console.error("Clip upload error:", e);
       return null;
     }
   }
@@ -124,21 +157,22 @@ export default function ReelCreatorPage() {
 
     // Insert placeholders immediately so the user sees progress
     const placeholders: UploadedClip[] = toAdd.map((file) => ({
-      id:        `clip_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      id:             `clip_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       file,
-      url:       "",
-      thumbnail: URL.createObjectURL(file),
-      duration:  0,
-      uploading: true,
+      url:            "",
+      thumbnail:      URL.createObjectURL(file),
+      duration:       0,
+      uploading:      true,
+      uploadProgress: 0,
     }));
     setClips((prev) => [...prev, ...placeholders]);
 
     // Upload sequentially to avoid hammering the API
     for (const ph of placeholders) {
-      const result = await uploadOneClip(ph.file);
+      const result = await uploadOneClip(ph.file, ph.id);
       if (!result?.url) {
         setClips((prev) => prev.map((c) =>
-          c.id === ph.id ? { ...c, uploading: false, error: "Upload failed" } : c
+          c.id === ph.id ? { ...c, uploading: false, uploadProgress: 0, error: "Upload failed" } : c
         ));
         toast.error(`Failed to upload ${ph.file.name}`);
         continue;
@@ -304,11 +338,23 @@ export default function ReelCreatorPage() {
                     {i + 1}
                   </span>
 
-                  {/* Uploading overlay */}
+                  {/* Uploading overlay with progress bar */}
                   {clip.uploading && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60">
-                      <Loader2 className="h-5 w-5 text-gold-500 animate-spin mb-1" />
-                      <span className="text-[10px] text-white">Uploading…</span>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 px-3 gap-2">
+                      <Loader2 className="h-4 w-4 text-gold-500 animate-spin" />
+                      <div className="w-full">
+                        <div className="h-1 w-full rounded-full bg-white/20">
+                          <div
+                            className="h-1 rounded-full bg-gold-500 transition-all duration-200"
+                            style={{ width: `${Math.max(clip.uploadProgress * 100, 4)}%` }}
+                          />
+                        </div>
+                        <p className="text-[9px] text-white/70 text-center mt-1">
+                          {clip.uploadProgress > 0
+                            ? `${Math.round(clip.uploadProgress * 100)}%`
+                            : "Starting…"}
+                        </p>
+                      </div>
                     </div>
                   )}
 
