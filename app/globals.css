@@ -4,8 +4,8 @@
 
 @layer base {
   :root {
-    --background: #080810;
-    --foreground: #ffffff;
+    --background: #040C0F;
+    --foreground: #F0F9FA;
   }
 
   * {
@@ -21,41 +21,41 @@
   }
 
   body {
-    background-color: #080810;
-    color: #ffffff;
+    background-color: #040C0F;
+    color: #F0F9FA;
     font-family: var(--font-inter), system-ui, sans-serif;
   }
 
-  /* Custom scrollbar */
+  /* Custom scrollbar — teal-tinted */
   ::-webkit-scrollbar {
     width: 5px;
     height: 5px;
   }
 
   ::-webkit-scrollbar-track {
-    background: #080810;
+    background: #040C0F;
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #2E2E46;
+    background: #1A3840;
     border-radius: 3px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #3E3E5A;
+    background: #255C68;
   }
 
-  /* Selection color — electric blue */
+  /* Selection — ocean teal tint */
   ::selection {
-    background-color: rgba(0, 87, 255, 0.30);
+    background-color: rgba(16, 200, 216, 0.25);
     color: #ffffff;
   }
 }
 
 @layer utilities {
-  /* Gradient text utility — electric blue → cayenne */
+  /* Gradient text — ocean teal depth */
   .text-gradient-gold {
-    background: linear-gradient(135deg, #0057FF 0%, #FF3D00 60%, #0057FF 100%);
+    background: linear-gradient(135deg, #10C8D8 0%, #076880 55%, #10C8D8 100%);
     background-size: 200% auto;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -63,7 +63,7 @@
   }
 
   .text-gradient-white {
-    background: linear-gradient(180deg, #ffffff 0%, rgba(255, 255, 255, 0.6) 100%);
+    background: linear-gradient(180deg, #F0F9FA 0%, rgba(240,249,250,0.55) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -84,20 +84,20 @@
     z-index: 0;
   }
 
-  /* Glow border — electric blue */
+  /* Glow border — ocean teal */
   .border-glow {
     border: 1px solid transparent;
-    background: linear-gradient(#10101A, #10101A) padding-box,
-      linear-gradient(135deg, rgba(0, 87, 255, 0.6), rgba(255, 61, 0, 0.35)) border-box;
+    background: linear-gradient(#071419, #071419) padding-box,
+      linear-gradient(135deg, rgba(16, 200, 216, 0.55), rgba(242, 110, 80, 0.30)) border-box;
   }
 
   /* Animated shimmer for skeleton loaders */
   .skeleton {
     background: linear-gradient(
       90deg,
-      #1c1c1c 0%,
-      #2a2a2a 50%,
-      #1c1c1c 100%
+      #0C1E25 0%,
+      #162E38 50%,
+      #0C1E25 100%
     );
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
