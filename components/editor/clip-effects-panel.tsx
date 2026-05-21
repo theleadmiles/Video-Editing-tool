@@ -18,7 +18,101 @@ export interface ColorGrade {
   saturation: number;  // 0   – 2,   default 1
 }
 
-const DEFAULT_GRADE: ColorGrade = { brightness: 1, contrast: 1, saturation: 1 };
+const DEFAULT_GRADE: ColorGrade = { brightness: 1, contrast: 1, saturation: 1 }
+
+interface GradePreset {
+  id: string;
+  label: string;
+  description: string;
+  grade: ColorGrade;
+}
+
+/**
+ * 12 tasteful color-grade presets for social/short-form video.
+ * Values are intentionally subtle — no blown-out saturation or crushed blacks.
+ */
+export const GRADE_PRESETS: GradePreset[] = [
+  {
+    id:          "natural",
+    label:       "Natural",
+    description: "No adjustments",
+    grade: { brightness: 1.00, contrast: 1.00, saturation: 1.00 },
+  },
+  {
+    id:          "clean_pop",
+    label:       "Clean Pop",
+    description: "Crisp, social-ready lift",
+    grade: { brightness: 1.03, contrast: 1.10, saturation: 1.12 },
+  },
+  {
+    id:          "bright_airy",
+    label:       "Bright & Airy",
+    description: "Open, high-key lifestyle feel",
+    grade: { brightness: 1.14, contrast: 0.88, saturation: 0.95 },
+  },
+  {
+    id:          "warm_glow",
+    label:       "Warm Glow",
+    description: "Gentle warmth, feels golden",
+    grade: { brightness: 1.06, contrast: 1.08, saturation: 1.08 },
+  },
+  {
+    id:          "cinematic",
+    label:       "Cinematic",
+    description: "Film-like, slightly muted",
+    grade: { brightness: 0.94, contrast: 1.22, saturation: 0.82 },
+  },
+  {
+    id:          "matte_film",
+    label:       "Matte Film",
+    description: "Lifted blacks, indie look",
+    grade: { brightness: 1.06, contrast: 0.83, saturation: 0.88 },
+  },
+  {
+    id:          "deep_rich",
+    label:       "Deep Rich",
+    description: "Punchy, rich, dramatic",
+    grade: { brightness: 0.91, contrast: 1.28, saturation: 1.10 },
+  },
+  {
+    id:          "studio",
+    label:       "Studio",
+    description: "Clean contrast, neutral look",
+    grade: { brightness: 1.00, contrast: 1.14, saturation: 1.00 },
+  },
+  {
+    id:          "vivid",
+    label:       "Vivid",
+    description: "Punchy colours, not overdone",
+    grade: { brightness: 1.02, contrast: 1.10, saturation: 1.32 },
+  },
+  {
+    id:          "faded",
+    label:       "Faded",
+    description: "Soft, washed-out, dreamy",
+    grade: { brightness: 1.09, contrast: 0.78, saturation: 0.72 },
+  },
+  {
+    id:          "moody",
+    label:       "Moody",
+    description: "Dark, desaturated, emotional",
+    grade: { brightness: 0.87, contrast: 1.18, saturation: 0.78 },
+  },
+  {
+    id:          "golden_hour",
+    label:       "Golden Hr.",
+    description: "Warm outdoor/sunset feel",
+    grade: { brightness: 1.07, contrast: 1.10, saturation: 1.05 },
+  },
+]
+
+function gradeMatchesPreset(g: ColorGrade, p: ColorGrade): boolean {
+  return (
+    Math.abs(g.brightness - p.brightness) < 0.015 &&
+    Math.abs(g.contrast   - p.contrast)   < 0.015 &&
+    Math.abs(g.saturation - p.saturation) < 0.015
+  );
+};
 
 type ClipWithEffects = TimelineClip & {
   filter?: string;
@@ -144,9 +238,56 @@ export function ClipEffectsPanel({
         {/* ── GRADE ── */}
         {tab === "grade" && (
           <div className="space-y-4">
-            {/* Preview swatch */}
+            {/* Preset swatches */}
+            <div>
+              <p className="mb-2 text-[10px] text-muted">
+                Preset:{" "}
+                <span className="text-white font-medium">
+                  {GRADE_PRESETS.find((p) => gradeMatchesPreset(grade, p.grade))?.label ?? "Custom"}
+                </span>
+              </p>
+              <div className="grid grid-cols-4 gap-1.5">
+                {GRADE_PRESETS.map((preset) => {
+                  const active = gradeMatchesPreset(grade, preset.grade);
+                  const filterStr = `brightness(${preset.grade.brightness}) contrast(${preset.grade.contrast}) saturate(${preset.grade.saturation})`;
+                  return (
+                    <button
+                      key={preset.id}
+                      onClick={() => onColorGradeChange?.(preset.grade)}
+                      title={preset.description}
+                      className={cn(
+                        "group relative rounded-lg overflow-hidden border-2 transition-all",
+                        active
+                          ? "border-gold-500 ring-2 ring-gold-500/20"
+                          : "border-transparent hover:border-border-strong"
+                      )}
+                      style={{ aspectRatio: "1" }}
+                    >
+                      {clip.thumbnail ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={clip.thumbnail}
+                          alt={preset.label}
+                          className="absolute inset-0 h-full w-full object-cover"
+                          style={{ filter: filterStr }}
+                        />
+                      ) : (
+                        <div className="absolute inset-0 bg-elevated" />
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 bg-black/70 px-0.5 py-0.5">
+                        <span className="text-[8px] text-white font-medium block truncate text-center leading-tight">
+                          {preset.label}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Live preview of active grade */}
             {clip.thumbnail && (
-              <div className="relative rounded-lg overflow-hidden aspect-video">
+              <div className="relative rounded-lg overflow-hidden" style={{ aspectRatio: "16/9" }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={clip.thumbnail}
@@ -157,62 +298,67 @@ export function ClipEffectsPanel({
                   }}
                 />
                 <div className="absolute bottom-1 right-1">
-                  <span className="text-[8px] bg-black/60 text-white rounded px-1 py-0.5">Preview</span>
+                  <span className="text-[8px] bg-black/60 text-white rounded px-1 py-0.5">Live preview</span>
                 </div>
               </div>
             )}
 
-            {/* Brightness */}
-            <div>
-              <label className="text-[10px] text-muted flex items-center justify-between mb-1">
-                <span>Brightness</span>
-                <span className="font-mono text-white">{grade.brightness.toFixed(2)}</span>
-              </label>
-              <input
-                type="range" min={0.5} max={1.5} step={0.01}
-                value={grade.brightness}
-                onChange={(e) => updateGrade({ brightness: Number(e.target.value) })}
-                aria-label="Brightness"
-                className="w-full accent-gold-500"
-              />
-              <div className="flex justify-between text-[8px] text-muted mt-0.5">
-                <span>Dark</span><span>Bright</span>
-              </div>
-            </div>
+            {/* Fine-tune sliders */}
+            <div className="space-y-3">
+              <p className="text-[10px] text-muted font-medium">Fine-tune</p>
 
-            {/* Contrast */}
-            <div>
-              <label className="text-[10px] text-muted flex items-center justify-between mb-1">
-                <span>Contrast</span>
-                <span className="font-mono text-white">{grade.contrast.toFixed(2)}</span>
-              </label>
-              <input
-                type="range" min={0.5} max={1.5} step={0.01}
-                value={grade.contrast}
-                onChange={(e) => updateGrade({ contrast: Number(e.target.value) })}
-                aria-label="Contrast"
-                className="w-full accent-gold-500"
-              />
-              <div className="flex justify-between text-[8px] text-muted mt-0.5">
-                <span>Flat</span><span>Punchy</span>
+              {/* Brightness */}
+              <div>
+                <label className="text-[10px] text-muted flex items-center justify-between mb-1">
+                  <span>Brightness</span>
+                  <span className="font-mono text-white">{grade.brightness.toFixed(2)}</span>
+                </label>
+                <input
+                  type="range" min={0.5} max={1.5} step={0.01}
+                  value={grade.brightness}
+                  onChange={(e) => updateGrade({ brightness: Number(e.target.value) })}
+                  aria-label="Brightness"
+                  className="w-full accent-gold-500"
+                />
+                <div className="flex justify-between text-[8px] text-muted mt-0.5">
+                  <span>Dark</span><span>Bright</span>
+                </div>
               </div>
-            </div>
 
-            {/* Saturation */}
-            <div>
-              <label className="text-[10px] text-muted flex items-center justify-between mb-1">
-                <span>Saturation</span>
-                <span className="font-mono text-white">{grade.saturation.toFixed(2)}</span>
-              </label>
-              <input
-                type="range" min={0} max={2} step={0.01}
-                value={grade.saturation}
-                onChange={(e) => updateGrade({ saturation: Number(e.target.value) })}
-                aria-label="Saturation"
-                className="w-full accent-gold-500"
-              />
-              <div className="flex justify-between text-[8px] text-muted mt-0.5">
-                <span>B&amp;W</span><span>Vivid</span>
+              {/* Contrast */}
+              <div>
+                <label className="text-[10px] text-muted flex items-center justify-between mb-1">
+                  <span>Contrast</span>
+                  <span className="font-mono text-white">{grade.contrast.toFixed(2)}</span>
+                </label>
+                <input
+                  type="range" min={0.5} max={1.5} step={0.01}
+                  value={grade.contrast}
+                  onChange={(e) => updateGrade({ contrast: Number(e.target.value) })}
+                  aria-label="Contrast"
+                  className="w-full accent-gold-500"
+                />
+                <div className="flex justify-between text-[8px] text-muted mt-0.5">
+                  <span>Flat</span><span>Punchy</span>
+                </div>
+              </div>
+
+              {/* Saturation */}
+              <div>
+                <label className="text-[10px] text-muted flex items-center justify-between mb-1">
+                  <span>Saturation</span>
+                  <span className="font-mono text-white">{grade.saturation.toFixed(2)}</span>
+                </label>
+                <input
+                  type="range" min={0} max={2} step={0.01}
+                  value={grade.saturation}
+                  onChange={(e) => updateGrade({ saturation: Number(e.target.value) })}
+                  aria-label="Saturation"
+                  className="w-full accent-gold-500"
+                />
+                <div className="flex justify-between text-[8px] text-muted mt-0.5">
+                  <span>B&amp;W</span><span>Vivid</span>
+                </div>
               </div>
             </div>
 
@@ -221,7 +367,7 @@ export function ClipEffectsPanel({
               onClick={() => onColorGradeChange?.(DEFAULT_GRADE)}
               className="w-full rounded-lg border border-border py-1.5 text-[10px] text-muted hover:text-white hover:border-border-strong transition-colors"
             >
-              Reset to defaults
+              Reset to Natural
             </button>
           </div>
         )}
