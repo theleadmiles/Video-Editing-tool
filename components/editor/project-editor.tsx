@@ -820,6 +820,9 @@ export function ProjectEditor({ project }: { project: Project }) {
   async function setClipKenBurns(trackId: string, clipId: string, config: { enabled: boolean; direction: string; intensity: number }) {
     await timelineOp("set_clip_effect", { trackId, clipId, field: "ken_burns", value: config });
   }
+  async function setClipColorGrade(trackId: string, clipId: string, grade: { brightness: number; contrast: number; saturation: number }) {
+    await timelineOp("set_clip_effect", { trackId, clipId, field: "color_grade", value: grade });
+  }
 
   // Show/hide the effects panel below the clip inspector
   const [showEffectsPanel, setShowEffectsPanel] = useState(false);
@@ -2236,6 +2239,8 @@ export function ProjectEditor({ project }: { project: Project }) {
                 onFilterChange={(filterId) => setClipFilter(videoTrack.id, selectedClipId!, filterId)}
                 onTransitionChange={(config) => setClipTransition(videoTrack.id, selectedClipId!, config)}
                 onKenBurnsChange={(config) => setClipKenBurns(videoTrack.id, selectedClipId!, config)}
+                onColorGradeChange={(grade) => setClipColorGrade(videoTrack.id, selectedClipId!, grade)}
+                onSpeedChange={(spd) => setClipSpeed(videoTrack.id, selectedClipId!, spd)}
               />
             </div>
           )}

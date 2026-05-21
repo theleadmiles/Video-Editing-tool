@@ -77,8 +77,13 @@ export function VideoPlayer({
         const active = i === currentClipIndex;
         const failed = failedIds.has(clip.id);
 
-        // Filter (LUT)
-        const filterCss = findFilter(clip.filter).css;
+        // Filter (LUT) + color grade combined
+        const lutCss = findFilter(clip.filter).css;
+        const grade = (clip as TimelineClip & { color_grade?: { brightness: number; contrast: number; saturation: number } }).color_grade;
+        const gradeCss = grade
+          ? `brightness(${grade.brightness}) contrast(${grade.contrast}) saturate(${grade.saturation})`
+          : "";
+        const filterCss = [lutCss, gradeCss].filter(Boolean).join(" ") || undefined;
 
         // Per-clip enter transition (applied to incoming clip)
         const transition = clip.transition;

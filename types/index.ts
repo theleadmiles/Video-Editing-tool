@@ -75,6 +75,7 @@ export interface TimelineClip {
   filter?: string; // id from COLOR_FILTERS
   transition?: { type: string; duration: number };
   ken_burns?: { enabled: boolean; direction: string; intensity: number };
+  color_grade?: { brightness: number; contrast: number; saturation: number };
 }
 
 export interface TimelineData {

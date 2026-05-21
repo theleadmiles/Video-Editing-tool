@@ -4,14 +4,35 @@
  * MP4 (H.264 + AAC) plays natively on iPhones, Android, web, and all editors.
  * WebM (VP9 + Opus) is faster to encode but doesn't play on iOS Safari.
  *
- * Loaded lazily — ffmpeg.wasm is ~30MB and only needed when user picks MP4.
+ * Loaded lazily — ffmpeg.wasm is ~30MB and only needed when user picks MP4
+ * and the browser doesn't support native MP4 recording.
  */
 
 import type { FFmpeg } from "@ffmpeg/ffmpeg";
 
 let cachedFfmpeg: FFmpeg | null = null;
 
-const FFMPEG_BASE_URL = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd";
+// @ffmpeg/core version must match the @ffmpeg/ffmpeg 0.12.x series
+const FFMPEG_BASE_URL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
+
+/**
+ * Ordered list of native MP4 MIME types supported by MediaRecorder.
+ * Chrome 130+ supports video/mp4 with AVC/H.264 — no transcode needed.
+ */
+const NATIVE_MP4_MIMES = [
+  "video/mp4;codecs=avc1,mp4a.40.2",
+  "video/mp4;codecs=avc1",
+  "video/mp4",
+];
+
+/**
+ * Returns the best native MP4 MIME type the browser supports, or null if
+ * none are available (in which case transcode from WebM is required).
+ */
+export function getNativeMp4Mime(): string | null {
+  if (typeof MediaRecorder === "undefined") return null;
+  return NATIVE_MP4_MIMES.find((m) => MediaRecorder.isTypeSupported(m)) ?? null;
+}
 
 /**
  * Load ffmpeg.wasm once (cached for subsequent exports).
@@ -81,7 +102,6 @@ export async function transcodeWebmToMp4(
 
   // Read output
   const data = await ffmpeg.readFile("output.mp4");
-  // data is Uint8Array
   const arr = data as Uint8Array;
   const buf = new ArrayBuffer(arr.byteLength);
   new Uint8Array(buf).set(arr);

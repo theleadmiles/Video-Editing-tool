@@ -6,7 +6,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Download, X, Film, Loader2, CheckCircle2, Cloud, Smartphone, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { transcodeWebmToMp4 } from "@/lib/mp4-converter";
+import { getNativeMp4Mime, transcodeWebmToMp4 } from "@/lib/mp4-converter";
 import type { Project, TimelineData, TimelineClip } from "@/types";
 
 interface ExportModalProps {
@@ -28,6 +28,8 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stopRef = useRef(false);
+  // set to the native MP4 mime used for recording, null = need to transcode
+  const nativeMp4MimeRef = useRef<string | null>(null);
 
   const timeline = project.timeline_data as TimelineData | null;
   const videoTrack = timeline?.tracks?.find((t) => t.type === "video");
@@ -47,25 +49,18 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
   };
   const dim = DIMS[resolution][project.aspect_ratio] || DIMS[resolution]["9:16"];
 
-  function loadImg(src: string): Promise<HTMLImageElement | null> {
-    return new Promise((res) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => res(img);
-      img.onerror = () => res(null);
-      img.src = src;
-    });
-  }
-
+  /** Draw a single frame at time t using real video el (or thumbnail fallback) */
   function drawFrame(
     ctx: CanvasRenderingContext2D,
     t: number,
-    imgs: (HTMLImageElement | null)[],
+    videoEls: HTMLVideoElement[],
+    fallbackImgs: (HTMLImageElement | null)[],
     w: number,
     h: number
   ) {
+    // Determine active clip index
     let elapsed = 0;
-    let idx = imgs.length - 1;
+    let idx = Math.max(0, brollClips.length - 1);
     for (let i = 0; i < brollClips.length; i++) {
       if (t >= elapsed && t < elapsed + brollClips[i].duration) { idx = i; break; }
       elapsed += brollClips[i].duration;
@@ -74,16 +69,32 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
     ctx.fillStyle = "#0A0A0A";
     ctx.fillRect(0, 0, w, h);
 
-    const img = imgs[idx];
-    if (img) {
-      const ir = img.width / img.height;
+    // Use live video frame if the element is ready, else fall back to thumbnail
+    const videoEl = videoEls[idx];
+    const useVideo = videoEl && videoEl.readyState >= 2 && videoEl.videoWidth > 0;
+    const srcW = useVideo ? videoEl.videoWidth  : (fallbackImgs[idx]?.width  ?? 0);
+    const srcH = useVideo ? videoEl.videoHeight : (fallbackImgs[idx]?.height ?? 0);
+    const drawSrc: CanvasImageSource | null = useVideo ? videoEl : (fallbackImgs[idx] ?? null);
+
+    if (drawSrc && srcW > 0 && srcH > 0) {
+      // Apply color_grade CSS-like transform on canvas via filter
+      const grade = (brollClips[idx] as TimelineClip & { color_grade?: { brightness: number; contrast: number; saturation: number } }).color_grade;
+      if (grade) {
+        ctx.filter = `brightness(${grade.brightness}) contrast(${grade.contrast}) saturate(${grade.saturation})`;
+      } else {
+        ctx.filter = "none";
+      }
+
+      const ir = srcW / srcH;
       const cr = w / h;
       let sw: number, sh: number, sx: number, sy: number;
       if (ir > cr) { sh = h; sw = h * ir; sy = 0; sx = (sw - w) / 2; }
       else { sw = w; sh = w / ir; sx = 0; sy = (sh - h) / 2; }
-      ctx.drawImage(img, -sx, -sy, sw, sh);
+      ctx.drawImage(drawSrc, -sx, -sy, sw, sh);
+      ctx.filter = "none";
     }
 
+    // Gradient vignette overlay
     const g = ctx.createLinearGradient(0, 0, 0, h);
     g.addColorStop(0, "rgba(0,0,0,0.25)");
     g.addColorStop(0.5, "rgba(0,0,0,0.05)");
@@ -91,13 +102,12 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
 
-    const cap = captions.find(
-      (c) => t >= c.start_time && t < c.start_time + c.duration
-    );
+    // Captions
+    const cap = captions.find((c) => t >= c.start_time && t < c.start_time + c.duration);
     if (cap?.text) {
       const fs = w >= 1280 ? 54 : 44;
       ctx.font = `bold ${fs}px Inter, system-ui, sans-serif`;
-      ctx.fillStyle = "#FFFFFF";
+      ctx.fillStyle = cap.color || "#FFFFFF";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.shadowColor = "rgba(0,0,0,0.9)";
@@ -147,27 +157,35 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
     }
   }
 
-  async function handleBlobReady(webmBlob: Blob, audioCtx: AudioContext | null) {
+  async function handleBlobReady(blob: Blob, audioCtx: AudioContext | null, usedMime: string) {
     audioCtx?.close();
-    let finalBlob: Blob = webmBlob;
+    let finalBlob: Blob = blob;
     let finalFormat: Format = "webm";
 
-    // Transcode to MP4 if requested
-    if (format === "mp4") {
+    const usedNativeMp4 = usedMime.startsWith("video/mp4");
+
+    if (format === "mp4" && usedNativeMp4) {
+      // Browser recorded native MP4 — no transcode needed
+      finalBlob = new Blob([blob], { type: "video/mp4" });
+      finalFormat = "mp4";
+    } else if (format === "mp4") {
+      // Need to transcode WebM → MP4
       setPhase("transcoding");
       setTranscodeProgress(0);
       try {
         finalBlob = await transcodeWebmToMp4(
-          webmBlob,
+          blob,
           (ratio) => setTranscodeProgress(ratio),
         );
         finalFormat = "mp4";
       } catch (err) {
         console.error("MP4 transcode failed:", err);
-        toast.error("MP4 conversion failed — falling back to WebM");
-        finalBlob = webmBlob;
+        toast.error("MP4 conversion failed — downloading as WebM");
+        finalBlob = blob;
         finalFormat = "webm";
       }
+    } else {
+      finalFormat = "webm";
     }
 
     // Trigger local download
@@ -180,7 +198,6 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    // Save to cloud if requested
     if (saveToCloud) {
       await saveRenderToCloud(finalBlob, finalFormat);
     }
@@ -202,10 +219,48 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
     canvas.height = h;
     const ctx = canvas.getContext("2d")!;
 
-    const imgs = await Promise.all(
-      brollClips.map((c) => (c.thumbnail ? loadImg(c.thumbnail) : Promise.resolve(null)))
+    // ── Load video elements (real motion) + thumbnail fallbacks ──────────────
+    const videoEls: HTMLVideoElement[] = brollClips.map((clip) => {
+      const v = document.createElement("video");
+      if (clip.url) v.src = clip.url;
+      v.muted = true; // audio handled separately via AudioContext
+      v.crossOrigin = "anonymous";
+      v.playsInline = true;
+      v.preload = "auto";
+      return v;
+    });
+
+    const fallbackImgs = await Promise.all(
+      brollClips.map((c) =>
+        c.thumbnail
+          ? new Promise<HTMLImageElement | null>((res) => {
+              const img = new Image();
+              img.crossOrigin = "anonymous";
+              img.onload = () => res(img);
+              img.onerror = () => res(null);
+              img.src = c.thumbnail!;
+            })
+          : Promise.resolve(null)
+      )
     );
 
+    // Wait for videos to buffer (resolve on canplay or error, don't block forever)
+    await Promise.all(
+      videoEls.map(
+        (v) =>
+          new Promise<void>((resolve) => {
+            if (!v.src) { resolve(); return; }
+            const done = () => resolve();
+            v.addEventListener("canplay", done, { once: true });
+            v.addEventListener("error", done, { once: true });
+            v.load();
+            // max 5s wait per clip
+            setTimeout(resolve, 5000);
+          })
+      )
+    );
+
+    // ── Audio setup ───────────────────────────────────────────────────────────
     let audioCtx: AudioContext | null = null;
     let destStream: MediaStream | null = null;
     let voiceSrc: AudioBufferSourceNode | null = null;
@@ -236,22 +291,28 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
       destStream = dest.stream;
     } catch { /* export video-only if audio fails */ }
 
+    // ── Determine MIME: native MP4 first, then WebM ───────────────────────────
+    const nativeMp4Mime = format === "mp4" ? getNativeMp4Mime() : null;
+    nativeMp4MimeRef.current = nativeMp4Mime;
+
+    const mime =
+      nativeMp4Mime ??
+      (MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+        ? "video/webm;codecs=vp9,opus"
+        : "video/webm");
+
     const videoStream = canvas.captureStream(30);
     const combined = new MediaStream([
       ...videoStream.getVideoTracks(),
       ...(destStream?.getAudioTracks() || []),
     ]);
-    const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
-      ? "video/webm;codecs=vp9,opus"
-      : "video/webm";
-
     const videoBitrate = resolution === "1080p" ? 8_000_000 : 3_000_000;
     const recorder = new MediaRecorder(combined, { mimeType: mime, videoBitsPerSecond: videoBitrate });
     const chunks: BlobPart[] = [];
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
     recorder.onstop = () => {
       const blob = new Blob(chunks, { type: mime });
-      handleBlobReady(blob, audioCtx);
+      handleBlobReady(blob, audioCtx, mime);
     };
 
     setPhase("rendering");
@@ -260,20 +321,69 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
     voiceSrc?.start(0);
     musicSrc?.start(0);
 
+    // ── Sequential clip playback ──────────────────────────────────────────────
+    // Precompute start times so we can switch clips at the right moment
+    const clipStartTimes = brollClips.map((_, i) =>
+      brollClips.slice(0, i).reduce((s, c) => s + c.duration, 0)
+    );
+
+    let activeVideoIdx = -1;
+
+    function activateClip(idx: number) {
+      if (idx === activeVideoIdx) return;
+      if (activeVideoIdx >= 0) {
+        videoEls[activeVideoIdx]?.pause();
+      }
+      activeVideoIdx = idx;
+      const v = videoEls[idx];
+      if (v && v.src) {
+        v.currentTime = 0;
+        v.play().catch(() => {});
+      }
+    }
+
+    // Start first clip immediately
+    if (videoEls.length > 0) activateClip(0);
+
     const t0 = performance.now();
+
     function render() {
-      if (stopRef.current) { recorder.stop(); audioCtx?.close(); return; }
+      if (stopRef.current) {
+        videoEls.forEach((v) => v.pause());
+        recorder.stop();
+        audioCtx?.close();
+        return;
+      }
+
       const t = (performance.now() - t0) / 1000;
       setProgress(Math.min(t / totalDuration, 1));
-      drawFrame(ctx, t, imgs, w, h);
-      if (t < totalDuration) requestAnimationFrame(render);
-      else recorder.stop();
+
+      // Switch clip if we've crossed a boundary
+      let targetIdx = 0;
+      for (let i = clipStartTimes.length - 1; i >= 0; i--) {
+        if (t >= clipStartTimes[i]) { targetIdx = i; break; }
+      }
+      activateClip(targetIdx);
+
+      drawFrame(ctx, t, videoEls, fallbackImgs, w, h);
+
+      if (t < totalDuration) {
+        requestAnimationFrame(render);
+      } else {
+        videoEls.forEach((v) => v.pause());
+        recorder.stop();
+      }
     }
+
     requestAnimationFrame(render);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, brollClips, captions, voiceoverUrl, musicUrl, totalDuration, format, resolution, saveToCloud]);
 
   const isRendering = phase !== "idle" && phase !== "done";
+  const needsTranscode = format === "mp4" && !getNativeMp4Mime();
+  const stepCount = format === "mp4"
+    ? (needsTranscode ? (saveToCloud ? "3" : "2") : (saveToCloud ? "2" : "1"))
+    : (saveToCloud ? "2" : "1");
 
   return (
     <Dialog
@@ -327,7 +437,9 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
                   <p className="text-[10px] text-muted leading-snug">
                     Universal · iPhone · WhatsApp · YouTube
                   </p>
-                  <p className="mt-1 text-[10px] text-gold-500/80">Recommended</p>
+                  <p className="mt-1 text-[10px] text-gold-500/80">
+                    {getNativeMp4Mime() ? "Native · No transcode" : "Recommended"}
+                  </p>
                 </button>
                 <button
                   onClick={() => setFormat("webm")}
@@ -388,7 +500,8 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
                 { label: "Resolution", value: `${dim.w} × ${dim.h}` },
                 { label: "Frame rate", value: "30fps" },
                 { label: "Duration", value: `${totalDuration}s` },
-                { label: "Audio", value: voiceoverUrl ? "Voice + Music mixed" : "No audio" },
+                { label: "Audio", value: voiceoverUrl ? "Voice + Music mixed" : musicUrl ? "Music" : "No audio" },
+                { label: "Clips", value: `${brollClips.length} clip${brollClips.length !== 1 ? "s" : ""}` },
               ].map((row) => (
                 <div key={row.label} className="flex justify-between text-xs">
                   <span className="text-muted">{row.label}</span>
@@ -425,10 +538,10 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
               </div>
             </button>
 
-            {!voiceoverUrl && (
+            {!voiceoverUrl && !musicUrl && (
               <div className="rounded-xl border border-ember-500/20 bg-ember-500/5 p-2.5">
                 <p className="text-[11px] text-ember-400">
-                  No voiceover detected. Generate one before exporting for sound.
+                  No audio detected. Generate a voiceover before exporting for sound.
                 </p>
               </div>
             )}
@@ -445,7 +558,7 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
           <div className="py-10 text-center">
             <Loader2 className="h-9 w-9 text-gold-500 animate-spin mx-auto mb-4" />
             <p className="font-semibold text-white">Loading assets…</p>
-            <p className="text-xs text-muted mt-1">Fetching images and audio</p>
+            <p className="text-xs text-muted mt-1">Fetching video clips and audio</p>
           </div>
         )}
 
@@ -464,7 +577,7 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
 
             <div>
               <div className="mb-1.5 flex justify-between text-xs text-muted">
-                <span>Step 1 of {format === "mp4" ? (saveToCloud ? "3" : "2") : (saveToCloud ? "2" : "1")} — Capturing frames</span>
+                <span>Step 1 of {stepCount} — Capturing frames</span>
                 <span>{Math.round(progress * 100)}%</span>
               </div>
               <div className="h-2 w-full rounded-full bg-overlay">
@@ -493,9 +606,7 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
                 <Smartphone className="h-7 w-7 text-gold-500" />
               </div>
               <p className="font-semibold text-white">Converting to MP4…</p>
-              <p className="text-xs text-muted mt-1">
-                Making it iPhone-compatible
-              </p>
+              <p className="text-xs text-muted mt-1">Making it iPhone-compatible</p>
             </div>
 
             <div>
