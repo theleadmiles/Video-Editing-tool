@@ -13,20 +13,21 @@ import {
   ChevronRight, ChevronLeft, Zap,
   Mic2, Music2, Clock, Ratio,
   CheckCircle2, AlertTriangle, Play, Square, Globe,
-  Captions,
+  Captions, Film,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Confetti } from "@/components/shared/confetti";
 
-type InputMode = "topic" | "script" | "upload" | "url";
+type InputMode = "topic" | "script" | "upload" | "url" | "reel";
 type Step = 1 | 2 | 3;
 
-// "upload" mode navigates away to /projects/caption — it's handled specially below
+// "upload" navigates to /projects/caption, "reel" navigates to /projects/reel — handled specially below
 const INPUT_MODES = [
-  { id: "topic", icon: Sparkles, label: "Topic / Idea", desc: "Type a topic — AI writes everything" },
-  { id: "script", icon: FileText, label: "My Script", desc: "Paste your own script" },
+  { id: "topic",  icon: Sparkles, label: "Topic / Idea",     desc: "Type a topic — AI writes everything" },
+  { id: "script", icon: FileText, label: "My Script",        desc: "Paste your own script" },
   { id: "upload", icon: Captions, label: "Caption my video", desc: "Upload your video, AI adds captions" },
-  { id: "url", icon: Link2, label: "URL / Link", desc: "YouTube, blog post, article" },
+  { id: "url",    icon: Link2,    label: "URL / Link",        desc: "YouTube, blog post, article" },
+  { id: "reel",   icon: Film,     label: "Reel Creator",     desc: "Sequence your own clips + music" },
 ];
 
 const DURATIONS = [
@@ -491,13 +492,14 @@ function NewProjectContent() {
             </div>
 
             {inputMode === "upload" ? (
-              <Button
-                className="w-full"
-                size="lg"
-                onClick={() => router.push("/projects/caption")}
-              >
+              <Button className="w-full" size="lg" onClick={() => router.push("/projects/caption")}>
                 <Captions className="h-4 w-4" />
-                Go to caption upload
+                Go to Caption Upload
+              </Button>
+            ) : inputMode === "reel" ? (
+              <Button className="w-full" size="lg" onClick={() => router.push("/projects/reel")}>
+                <Film className="h-4 w-4" />
+                Go to Reel Creator
               </Button>
             ) : (
               <Button

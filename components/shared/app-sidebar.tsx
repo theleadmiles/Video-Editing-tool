@@ -22,6 +22,7 @@ import {
   Mic2,
   Film,
   Captions,
+  Clapperboard,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -31,6 +32,7 @@ const navItems = [
   { href: "/dashboard",          icon: LayoutDashboard, label: "Dashboard" },
   { href: "/projects",           icon: FolderOpen,      label: "Projects" },
   { href: "/projects/caption",   icon: Captions,        label: "Caption Video" },
+  { href: "/projects/reel",      icon: Clapperboard,    label: "Reel Creator" },
   { href: "/renders",            icon: Film,            label: "Renders" },
   { href: "/assets",             icon: Library,         label: "Assets" },
   { href: "/templates",          icon: LayoutTemplate,  label: "Templates" },
