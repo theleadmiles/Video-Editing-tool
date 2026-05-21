@@ -164,18 +164,9 @@ export function ProjectEditor({ project }: { project: Project }) {
     return Math.max(0, clips.length - 1);
   })();
 
-  const currentCaption = (captionTrack?.clips as TimelineClip[] | undefined)?.find(
-    (c) => playTime >= c.start_time && playTime < c.start_time + c.duration
-  ) ?? null;
-
-  // Caption list auto-scroll — keeps the playing caption visible in the panel
+  // Caption list scroll refs (used after currentCaption is declared below)
   const captionListRef = useRef<HTMLDivElement>(null);
   const activeCaptionRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (activeCaptionRef.current) {
-      activeCaptionRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    }
-  }, [currentCaption?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const progressPercent = totalDuration > 0 ? (playTime / totalDuration) * 100 : 0;
 
@@ -434,6 +425,7 @@ export function ProjectEditor({ project }: { project: Project }) {
   }
 
   const [showExportModal, setShowExportModal] = useState(false);
+  const [previewZoom, setPreviewZoom] = useState(1);
   const [regenerating, setRegenerating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
@@ -464,6 +456,18 @@ export function ProjectEditor({ project }: { project: Project }) {
     (captionTrack?.clips || []) as TimelineClip[]
   );
   const [savingCaptions, setSavingCaptions] = useState(false);
+
+  // Derived from editedCaptions so preset/style changes show in preview immediately (no save needed)
+  const currentCaption = editedCaptions.find(
+    (c) => playTime >= c.start_time && playTime < c.start_time + c.duration
+  ) ?? null;
+
+  // Auto-scroll caption list to keep the playing caption visible
+  useEffect(() => {
+    if (activeCaptionRef.current) {
+      activeCaptionRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [currentCaption?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function saveCaptions() {
     setSavingCaptions(true);
@@ -1811,11 +1815,13 @@ export function ProjectEditor({ project }: { project: Project }) {
         </aside>
 
         {/* ── CENTER PREVIEW ── */}
-        <main className="flex flex-1 flex-col items-center justify-center bg-[#050505] gap-4">
-          <div className="relative">
+        <main className="flex flex-1 flex-col overflow-auto bg-[#050505]">
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 py-6 min-h-full">
+          <div className="relative" style={{ transition: "width 0.15s, height 0.15s" }}>
             {/* 9:16 */}
             {project.aspect_ratio === "9:16" && (
-              <div className="relative h-[480px] w-[270px] rounded-2xl overflow-hidden border border-border shadow-[0_0_80px_rgba(0,0,0,0.9)]">
+              <div className="relative rounded-2xl overflow-hidden border border-border shadow-[0_0_80px_rgba(0,0,0,0.9)]"
+                style={{ height: `${480 * previewZoom}px`, width: `${270 * previewZoom}px` }}>
                 <VideoPlayer
                   clips={brollClips}
                   currentClipIndex={currentClipIndex}
@@ -1856,7 +1862,8 @@ export function ProjectEditor({ project }: { project: Project }) {
 
             {/* 16:9 */}
             {project.aspect_ratio === "16:9" && (
-              <div className="relative w-[600px] h-[338px] rounded-2xl overflow-hidden border border-border shadow-[0_0_80px_rgba(0,0,0,0.9)]">
+              <div className="relative rounded-2xl overflow-hidden border border-border shadow-[0_0_80px_rgba(0,0,0,0.9)]"
+                style={{ width: `${600 * previewZoom}px`, height: `${338 * previewZoom}px` }}>
                 <VideoPlayer clips={brollClips} currentClipIndex={currentClipIndex} currentCaption={currentCaption} isPlaying={isPlaying} isMuted={isMuted} emphasisStyle={emphasisStyle} onTimeUpdate={(t) => setPlayTime(t)} />
                 <div className="absolute inset-0 z-10 flex items-center justify-center">
                   <button onClick={togglePlay} className="flex h-16 w-16 items-center justify-center rounded-full bg-black/40 backdrop-blur border border-white/20 hover:bg-black/60 transition-all">
@@ -1874,7 +1881,8 @@ export function ProjectEditor({ project }: { project: Project }) {
 
             {/* 1:1 */}
             {project.aspect_ratio === "1:1" && (
-              <div className="relative w-[380px] h-[380px] rounded-2xl overflow-hidden border border-border shadow-[0_0_80px_rgba(0,0,0,0.9)]">
+              <div className="relative rounded-2xl overflow-hidden border border-border shadow-[0_0_80px_rgba(0,0,0,0.9)]"
+                style={{ width: `${380 * previewZoom}px`, height: `${380 * previewZoom}px` }}>
                 <VideoPlayer clips={brollClips} currentClipIndex={currentClipIndex} currentCaption={currentCaption} isPlaying={isPlaying} isMuted={isMuted} emphasisStyle={emphasisStyle} onTimeUpdate={(t) => setPlayTime(t)} />
                 <div className="absolute inset-0 z-10 flex items-center justify-center">
                   <button onClick={togglePlay} className="flex h-14 w-14 items-center justify-center rounded-full bg-black/40 backdrop-blur border border-white/20 hover:bg-black/60 transition-all">
@@ -1891,21 +1899,44 @@ export function ProjectEditor({ project }: { project: Project }) {
             )}
           </div>
 
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-muted">
+          {/* Zoom + hint bar */}
+          <div className="flex items-center justify-between gap-3 w-full max-w-lg px-2">
+            <p className="text-xs text-muted flex-1">
               {brollClips.length > 0 ? "Live preview" : "Generate a video to see the preview"}
             </p>
-            <div className="hidden xl:flex items-center gap-2 text-[10px] text-muted/60">
-              <span className="rounded border border-border px-1 py-0.5 font-mono">Space</span>
-              <span>play</span>
-              <span className="rounded border border-border px-1 py-0.5 font-mono">J K L</span>
-              <span>transport</span>
-              <span className="rounded border border-border px-1 py-0.5 font-mono">⌘K</span>
-              <span>split</span>
-              <span className="rounded border border-border px-1 py-0.5 font-mono">Del</span>
-              <span>remove</span>
+            {/* Zoom controls */}
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setPreviewZoom((v) => Math.max(0.4, parseFloat((v - 0.25).toFixed(2))))}
+                aria-label="Zoom out"
+                title="Zoom out"
+                className="flex h-6 w-6 items-center justify-center rounded-md border border-border text-muted hover:text-white hover:border-border-strong transition-all"
+              >
+                <ZoomOut className="h-3.5 w-3.5" />
+              </button>
+              <span className="text-[11px] text-muted font-mono w-10 text-center select-none">
+                {Math.round(previewZoom * 100)}%
+              </span>
+              <button
+                onClick={() => setPreviewZoom((v) => Math.min(2, parseFloat((v + 0.25).toFixed(2))))}
+                aria-label="Zoom in"
+                title="Zoom in"
+                className="flex h-6 w-6 items-center justify-center rounded-md border border-border text-muted hover:text-white hover:border-border-strong transition-all"
+              >
+                <ZoomIn className="h-3.5 w-3.5" />
+              </button>
+              {previewZoom !== 1 && (
+                <button
+                  onClick={() => setPreviewZoom(1)}
+                  className="text-[10px] text-gold-500 hover:text-gold-400 transition-colors ml-1"
+                  title="Reset zoom"
+                >
+                  Reset
+                </button>
+              )}
             </div>
           </div>
+          </div> {/* end inner centering wrapper */}
         </main>
 
         {/* ── Right panel — contextual ── */}
@@ -1913,7 +1944,19 @@ export function ProjectEditor({ project }: { project: Project }) {
           {activeTab === "captions" ? (
             /* ── Caption style editor ── */
             <div className="p-3 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted">Caption Style</p>
+              {/* Header with save button */}
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted">Caption Style</p>
+                <Button
+                  size="sm"
+                  onClick={saveCaptions}
+                  loading={savingCaptions}
+                  className="h-7 text-[11px] px-3 gap-1.5"
+                >
+                  <Save className="h-3 w-3" />
+                  Save
+                </Button>
+              </div>
 
               {/* Template picker */}
               <div>
