@@ -1,18 +1,16 @@
 import type { Metadata } from "next";
-import { Inter, Geist, Geist_Mono } from "next/font/google";
+import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/toast";
 
+// Two fonts instead of three — Inter covers all UI text, Geist Mono for code.
+// Dropping Geist Sans removes one network round-trip (~20–35 KB) on first load.
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
   display: "swap",
-});
-
-const geistSans = Geist({
-  subsets: ["latin"],
-  variable: "--font-geist-sans",
-  display: "swap",
+  // Only load the weights we actually use
+  weight: ["400", "500", "600", "700"],
 });
 
 const geistMono = Geist_Mono({
@@ -65,7 +63,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${inter.variable} ${geistSans.variable} ${geistMono.variable} bg-base text-white antialiased`}
+        className={`${inter.variable} ${geistMono.variable} bg-base text-white antialiased`}
       >
         {/* Skip to content — visible only on keyboard focus */}
         <a

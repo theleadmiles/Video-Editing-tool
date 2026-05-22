@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { cn, formatDuration } from "@/lib/utils";
 import { Film, Mic2, Music2, Type, Scissors, Trash2, GripVertical } from "lucide-react";
 import type { TimelineData, TimelineClip } from "@/types";
@@ -142,12 +142,13 @@ export function ProTimeline({
 
   // Deterministic waveform heights — sine-based, no Math.random() so they
   // stay stable across re-renders and server/client hydration.
-  const voiceWaveBars = Array.from({ length: 80 }, (_, i) =>
+  // useMemo ensures the arrays are only computed once per component lifetime.
+  const voiceWaveBars = useMemo(() => Array.from({ length: 80 }, (_, i) =>
     Math.max(12, 32 + Math.sin(i * 0.71) * 18 + Math.sin(i * 0.29 + 1.5) * 12 + Math.cos(i * 1.13) * 8)
-  );
-  const musicWaveBars = Array.from({ length: 80 }, (_, i) =>
+  ), []);
+  const musicWaveBars = useMemo(() => Array.from({ length: 80 }, (_, i) =>
     Math.max(12, 28 + Math.sin(i * 0.53 + 0.3) * 20 + Math.sin(i * 0.87 + 2.1) * 10 + Math.cos(i * 0.41) * 12)
-  );
+  ), []);
 
   return (
     <div className="bg-base flex flex-col h-full">

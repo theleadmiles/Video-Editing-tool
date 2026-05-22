@@ -9,7 +9,7 @@ import { MUSIC_MOODS } from "@/lib/ai/elevenlabs";
 import { cn } from "@/lib/utils";
 import {
   ChevronLeft, Upload, X, Loader2,
-  Check, Plus, Sparkles, Music2, AudioWaveform,
+  Check, Plus, Sparkles, Music2, AudioWaveform, GripVertical,
 } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -234,8 +234,14 @@ export default function ReelCreatorPage() {
 
   const [clips, setClips]             = useState<UploadedClip[]>([]);
   const [dragging, setDragging]       = useState(false);
+  // Clip drag-to-reorder
+  const [dragClipId, setDragClipId]   = useState<string | null>(null);
+  const [dragOverClipId, setDragOverClipId] = useState<string | null>(null);
+
   const [aspectRatio, setAspectRatio] = useState<"9:16" | "16:9" | "1:1">("9:16");
   const [targetDuration, setTargetDuration] = useState(30);
+  // Manual duration input (raw string so user can type freely)
+  const [customDurStr, setCustomDurStr] = useState("");
   const [beatSync, setBeatSync]       = useState(true);
   const [transition, setTransition]   = useState("cut");
   const [title, setTitle]             = useState("");
@@ -301,14 +307,15 @@ export default function ReelCreatorPage() {
     }));
     setClips(prev => [...prev, ...placeholders]);
 
-    for (const ph of placeholders) {
+    // Upload all clips in parallel — much faster than sequential for multiple files
+    await Promise.all(placeholders.map(async (ph) => {
       const result = await uploadOneClip(ph.file, ph.id);
       if (!result?.url) {
         setClips(prev => prev.map(c =>
           c.id === ph.id ? { ...c, uploading: false, uploadProgress: 0, error: "Upload failed" } : c
         ));
         toast.error(`Failed to upload ${ph.file.name}`);
-        continue;
+        return;
       }
 
       const [thumbnail, duration] = await Promise.all([
@@ -320,7 +327,7 @@ export default function ReelCreatorPage() {
           ? { ...c, url: result.url, thumbnail, duration, uploading: false, uploadProgress: 1 }
           : c
       ));
-    }
+    }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clips.length]);
 
@@ -334,6 +341,33 @@ export default function ReelCreatorPage() {
     if (videoInputRef.current) videoInputRef.current.value = "";
   }
   function removeClip(id: string) { setClips(prev => prev.filter(c => c.id !== id)); }
+
+  // Drag-to-reorder clip grid
+  function handleClipDragStart(e: DragEvent<HTMLDivElement>, id: string) {
+    setDragClipId(id);
+    e.dataTransfer.effectAllowed = "move";
+  }
+  function handleClipDragOver(e: DragEvent<HTMLDivElement>, id: string) {
+    e.preventDefault();
+    if (id !== dragClipId) setDragOverClipId(id);
+  }
+  function handleClipDrop(e: DragEvent<HTMLDivElement>, targetId: string) {
+    e.preventDefault();
+    if (!dragClipId || dragClipId === targetId) {
+      setDragClipId(null); setDragOverClipId(null); return;
+    }
+    setClips(prev => {
+      const arr   = [...prev];
+      const srcIdx = arr.findIndex(c => c.id === dragClipId);
+      const dstIdx = arr.findIndex(c => c.id === targetId);
+      if (srcIdx < 0 || dstIdx < 0) return prev;
+      const [moved] = arr.splice(srcIdx, 1);
+      arr.splice(dstIdx, 0, moved);
+      return arr;
+    });
+    setDragClipId(null); setDragOverClipId(null);
+  }
+  function handleClipDragEnd() { setDragClipId(null); setDragOverClipId(null); }
 
   // ── Music upload + analysis ───────────────────────────────────────────────
 
@@ -537,15 +571,28 @@ export default function ReelCreatorPage() {
               {clips.map((clip, i) => (
                 <div
                   key={clip.id}
+                  draggable={!clip.uploading}
+                  onDragStart={e => handleClipDragStart(e, clip.id)}
+                  onDragOver={e => handleClipDragOver(e, clip.id)}
+                  onDrop={e => handleClipDrop(e, clip.id)}
+                  onDragEnd={handleClipDragEnd}
                   className={cn(
-                    "relative rounded-xl overflow-hidden border aspect-video bg-elevated",
-                    clip.error ? "border-ember-500/40" : "border-border"
+                    "group relative rounded-xl overflow-hidden border aspect-video bg-elevated transition-all",
+                    clip.error ? "border-ember-500/40" : "border-border",
+                    dragOverClipId === clip.id && "ring-2 ring-gold-500 scale-[0.97]",
+                    dragClipId === clip.id && "opacity-40"
                   )}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={clip.thumbnail} alt="" className="absolute inset-0 h-full w-full object-cover" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30" />
                   <span className="absolute top-1.5 left-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-[10px] font-bold text-white">{i + 1}</span>
+                  {/* Drag handle — visible on hover */}
+                  {!clip.uploading && !clip.error && (
+                    <div className="absolute bottom-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
+                      <GripVertical className="h-3.5 w-3.5 text-white/70" />
+                    </div>
+                  )}
 
                   {clip.uploading && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 px-3 gap-2">
@@ -600,6 +647,7 @@ export default function ReelCreatorPage() {
           {readyCount > 0 && (
             <p className="mt-2 text-[11px] text-muted">
               {readyCount} uploaded · target <span className="text-gold-500 font-medium">{targetDuration}s reel</span>
+              {readyCount > 1 && <span className="ml-2 opacity-60">· drag clips to reorder</span>}
             </p>
           )}
         </section>
@@ -777,18 +825,46 @@ export default function ReelCreatorPage() {
                 {TARGET_DURATIONS.map(d => (
                   <button
                     key={d.value}
-                    onClick={() => setTargetDuration(d.value)}
+                    onClick={() => { setTargetDuration(d.value); setCustomDurStr(""); }}
                     className={cn(
                       "flex-1 flex flex-col items-center rounded-xl border p-3 transition-all",
-                      targetDuration === d.value
+                      targetDuration === d.value && !customDurStr
                         ? "border-gold-500/50 bg-gold-500/10"
                         : "border-border bg-elevated/40 hover:border-border-strong"
                     )}
                   >
-                    <span className={cn("text-sm font-bold", targetDuration === d.value ? "text-gold-500" : "text-white")}>{d.label}</span>
+                    <span className={cn("text-sm font-bold", targetDuration === d.value && !customDurStr ? "text-gold-500" : "text-white")}>{d.label}</span>
                     <span className="text-[10px] text-muted">{d.desc}</span>
                   </button>
                 ))}
+              </div>
+              {/* Manual / custom duration input */}
+              <div className="mt-2 flex items-center gap-2">
+                <label className="text-[11px] text-muted whitespace-nowrap flex-shrink-0">Or type custom:</label>
+                <div className="relative flex-1 max-w-[120px]">
+                  <input
+                    type="number"
+                    min={5}
+                    max={300}
+                    step={1}
+                    value={customDurStr}
+                    onChange={e => {
+                      const raw = e.target.value;
+                      setCustomDurStr(raw);
+                      const n = parseInt(raw, 10);
+                      if (!isNaN(n) && n >= 5 && n <= 300) setTargetDuration(n);
+                    }}
+                    placeholder={String(targetDuration)}
+                    className={cn(
+                      "w-full rounded-lg border bg-elevated/60 px-2.5 py-1.5 text-sm text-white placeholder:text-muted focus:outline-none focus:border-gold-500/50 transition-colors",
+                      customDurStr ? "border-gold-500/50" : "border-border"
+                    )}
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted pointer-events-none">s</span>
+                </div>
+                {customDurStr && (
+                  <span className="text-[11px] text-gold-500 font-medium">{targetDuration}s selected</span>
+                )}
               </div>
             </div>
 

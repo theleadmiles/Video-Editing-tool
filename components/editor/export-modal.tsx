@@ -40,7 +40,10 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
   const brollClips = (videoTrack?.clips || []) as TimelineClip[];
   const captions = (captionTrack?.clips || []) as TimelineClip[];
   const voiceoverUrl = voiceoverTrack?.clips?.[0]?.url || "";
-  const musicUrl = musicTrack?.clips?.[0]?.url || "";
+  const musicClip = musicTrack?.clips?.[0];
+  const musicUrl = musicClip?.url || "";
+  // trim_start: the best-segment offset stored during reel creation
+  const musicTrimStart: number = (musicClip as (typeof musicClip & { trim_start?: number }) | undefined)?.trim_start ?? 0;
   const totalDuration = timeline?.duration || project.duration_seconds || 45;
 
   const DIMS: Record<Resolution, Record<string, { w: number; h: number }>> = {
@@ -286,6 +289,11 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
           musicSrc.buffer = decoded;
           const g = audioCtx.createGain(); g.gain.value = 0.2;
           musicSrc.connect(g).connect(dest);
+          // trim_start: begin playback at the beat-synced best-segment offset
+          if (musicTrimStart > 0 && musicTrimStart < decoded.duration) {
+            // Store offset — used in musicSrc.start() below
+            (musicSrc as typeof musicSrc & { _trimStart?: number })._trimStart = musicTrimStart;
+          }
         } catch { /* music is optional */ }
       }
       destStream = dest.stream;
@@ -319,7 +327,9 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
     recorder.start(200);
 
     voiceSrc?.start(0);
-    musicSrc?.start(0);
+    // Start music at the best-segment offset (trim_start), default 0
+    const musicOffset = (musicSrc as (typeof musicSrc & { _trimStart?: number }) | null)?._trimStart ?? 0;
+    musicSrc?.start(0, musicOffset);
 
     // ── Sequential clip playback ──────────────────────────────────────────────
     // Precompute start times so we can switch clips at the right moment
