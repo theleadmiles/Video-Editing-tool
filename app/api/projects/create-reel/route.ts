@@ -25,12 +25,16 @@ export async function POST(req: NextRequest) {
   // ── Parse inputs ──────────────────────────────────────────────────────────
   const body = await req.json();
   const {
-    title       = "My Reel",
-    clips       = [] as { url: string; thumbnail?: string; duration?: number }[],
-    musicMood   = "upbeat",
-    clipDuration = 3,   // seconds each clip plays
-    transition  = "cut", // "cut" | "fade"
-    aspectRatio = "9:16",
+    title            = "My Reel",
+    clips            = [] as { url: string; thumbnail?: string; duration?: number }[],
+    musicMood        = "upbeat",
+    customMusicUrl   = null as string | null,   // user-uploaded music URL
+    clipDuration     = 3,                        // fallback: equal duration per clip
+    clipDurations    = null as number[] | null,  // beat-synced per-clip durations
+    musicStartTime   = 0,                        // best segment start offset in the track
+    targetDuration   = null as number | null,    // desired total reel duration
+    transition       = "cut",                    // "cut" | "fade"
+    aspectRatio      = "9:16",
   } = body;
 
   if (!clips.length) {
@@ -38,25 +42,48 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Fetch music ────────────────────────────────────────────────────────────
-  let musicUrl: string | null = null;
-  try {
-    const music = await getMusicByMood(musicMood);
-    musicUrl = music?.url ?? null;
-  } catch { /* music is optional */ }
+  // If the user provided their own music file, skip the Pixabay fetch
+  let musicUrl: string | null = customMusicUrl || null;
+  if (!musicUrl) {
+    try {
+      const music = await getMusicByMood(musicMood);
+      musicUrl = music?.url ?? null;
+    } catch { /* music is optional */ }
+  }
+
+  // ── Resolve per-clip durations ─────────────────────────────────────────────
+  // If beat-synced durations were computed on the client, use them.
+  // Otherwise fall back to equal duration per clip.
+  const hasBeatDurations =
+    Array.isArray(clipDurations) &&
+    clipDurations.length === clips.length &&
+    clipDurations.every((d: number) => typeof d === "number" && d > 0);
+
+  const durations: number[] = hasBeatDurations
+    ? (clipDurations as number[])
+    : Array(clips.length).fill(Number(clipDuration) || 3);
+
+  const totalDuration =
+    targetDuration && targetDuration > 0
+      ? Number(targetDuration)
+      : durations.reduce((s: number, d: number) => s + d, 0);
 
   // ── Build timeline ─────────────────────────────────────────────────────────
-  const dur = Number(clipDuration) || 3;
-  const totalDuration = clips.length * dur;
-
+  let cursor = 0;
   const videoClips = clips.map(
-    (clip: { url: string; thumbnail?: string; duration?: number }, i: number) => ({
-      id: `reel_clip_${i}_${Date.now()}`,
-      url: clip.url,
-      thumbnail: clip.thumbnail || clip.url,
-      start_time: i * dur,
-      duration: dur,
-      ...(i > 0 ? { transition: { type: transition, duration: 0.3 } } : {}),
-    })
+    (clip: { url: string; thumbnail?: string; duration?: number }, i: number) => {
+      const d = durations[i];
+      const clipObj = {
+        id: `reel_clip_${i}_${Date.now()}`,
+        url: clip.url,
+        thumbnail: clip.thumbnail || clip.url,
+        start_time: cursor,
+        duration: d,
+        ...(i > 0 ? { transition: { type: transition, duration: 0.3 } } : {}),
+      };
+      cursor += d;
+      return clipObj;
+    }
   );
 
   const tracks = [
@@ -71,6 +98,7 @@ export async function POST(req: NextRequest) {
             start_time: 0,
             duration: totalDuration,
             volume: 0.4,
+            ...(musicStartTime > 0 ? { trim_start: musicStartTime } : {}),
           }],
         }]
       : []),

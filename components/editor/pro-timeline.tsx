@@ -140,8 +140,17 @@ export function ProTimeline({
     setDragOverIndex(null);
   }
 
+  // Deterministic waveform heights — sine-based, no Math.random() so they
+  // stay stable across re-renders and server/client hydration.
+  const voiceWaveBars = Array.from({ length: 80 }, (_, i) =>
+    Math.max(12, 32 + Math.sin(i * 0.71) * 18 + Math.sin(i * 0.29 + 1.5) * 12 + Math.cos(i * 1.13) * 8)
+  );
+  const musicWaveBars = Array.from({ length: 80 }, (_, i) =>
+    Math.max(12, 28 + Math.sin(i * 0.53 + 0.3) * 20 + Math.sin(i * 0.87 + 2.1) * 10 + Math.cos(i * 0.41) * 12)
+  );
+
   return (
-    <div className="border-t border-border bg-base">
+    <div className="bg-base flex flex-col h-full">
       {/* Top toolbar */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-surface/50">
         <div className="flex items-center gap-2">
@@ -372,23 +381,16 @@ export function ProTimeline({
         {/* Voiceover track */}
         <TrackLane icon={Mic2} label="Voice" iconColor="text-gold-500">
           <div className="h-7 w-full bg-gold-500/10 border border-gold-500/20 rounded relative overflow-hidden">
-            {/* Fake waveform */}
-            <div className="absolute inset-0 flex items-center px-1 gap-px">
-              {Array.from({ length: Math.floor(totalDuration * 4) }).map((_, i) => (
-                <div
-                  key={i}
-                  className="bg-gold-500/40 rounded-sm"
-                  style={{
-                    width: 2,
-                    height: `${30 + Math.sin(i * 0.5) * 30 + Math.random() * 20}%`,
-                  }}
-                />
-              ))}
-            </div>
             {voiceoverTrack?.clips?.[0]?.url ? (
-              <span className="absolute left-1 top-1 text-[8px] text-gold-400 font-medium">
-                AI Voiceover
-              </span>
+              <>
+                {/* Stable deterministic waveform — fills full width */}
+                <div className="absolute inset-0 flex items-end px-0.5 pb-0.5 gap-px overflow-hidden">
+                  {voiceWaveBars.map((h, i) => (
+                    <div key={i} className="flex-1 bg-gold-500/50 rounded-sm" style={{ height: `${h}%` }} />
+                  ))}
+                </div>
+                <span className="absolute left-1 top-0.5 text-[8px] text-gold-400 font-semibold">AI Voiceover</span>
+              </>
             ) : (
               <span className="absolute left-1 top-1 text-[8px] text-muted">No voiceover</span>
             )}
@@ -400,20 +402,13 @@ export function ProTimeline({
           <div className="h-7 w-full bg-ember-500/10 border border-ember-500/20 rounded relative overflow-hidden">
             {musicTrack?.clips?.[0]?.url ? (
               <>
-                {/* Soft waveform */}
-                <div className="absolute inset-0 flex items-center px-1 gap-px">
-                  {Array.from({ length: Math.floor(totalDuration * 3) }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="bg-ember-500/40 rounded-sm"
-                      style={{
-                        width: 2,
-                        height: `${20 + Math.sin(i * 0.8 + 1) * 20 + Math.random() * 15}%`,
-                      }}
-                    />
+                {/* Stable deterministic waveform — fills full width */}
+                <div className="absolute inset-0 flex items-end px-0.5 pb-0.5 gap-px overflow-hidden">
+                  {musicWaveBars.map((h, i) => (
+                    <div key={i} className="flex-1 bg-ember-500/45 rounded-sm" style={{ height: `${h}%` }} />
                   ))}
                 </div>
-                <span className="absolute left-1 top-1 text-[8px] text-ember-400 font-medium">Music</span>
+                <span className="absolute left-1 top-0.5 text-[8px] text-ember-400 font-semibold">Music</span>
               </>
             ) : (
               <span className="absolute left-1 top-1 text-[8px] text-muted">No music</span>

@@ -224,6 +224,26 @@ export function ProjectEditor({ project }: { project: Project }) {
   // Timeline zoom (50% – 300%)
   const [timelineZoom, setTimelineZoom] = useState(100);
 
+  // Timeline height — drag-to-resize (120 – 480 px)
+  const [timelineHeight, setTimelineHeight] = useState(220);
+  const tlResizeRef = useRef<{ startY: number; startH: number } | null>(null);
+  function startTimelineResize(e: React.MouseEvent) {
+    e.preventDefault();
+    tlResizeRef.current = { startY: e.clientY, startH: timelineHeight };
+    function onMove(ev: MouseEvent) {
+      if (!tlResizeRef.current) return;
+      const delta = tlResizeRef.current.startY - ev.clientY; // drag up = taller
+      setTimelineHeight(Math.max(120, Math.min(480, tlResizeRef.current.startH + delta)));
+    }
+    function onUp() {
+      tlResizeRef.current = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
+
   // Phase 15: Emphasis style (project-wide)
   const [emphasisStyle, setEmphasisStyle] = useState<EmphasisStyle>(
     (timeline as unknown as { emphasis_style?: EmphasisStyle })?.emphasis_style || DEFAULT_EMPHASIS_STYLE
@@ -2249,7 +2269,16 @@ export function ProjectEditor({ project }: { project: Project }) {
 
       {/* ── Pro Timeline ── */}
       {currentTimeline && brollClips.length > 0 ? (
-        <div className="flex-shrink-0">
+        <div className="flex-shrink-0 flex flex-col" style={{ height: timelineHeight }}>
+          {/* Drag handle — grab to resize timeline height */}
+          <div
+            onMouseDown={startTimelineResize}
+            title="Drag to resize timeline"
+            className="h-1.5 w-full cursor-row-resize bg-border hover:bg-gold-500/40 active:bg-gold-500/60 transition-colors flex-shrink-0 group"
+          >
+            <div className="mx-auto mt-0.5 h-px w-8 rounded-full bg-border-strong group-hover:bg-gold-500/60 transition-colors" />
+          </div>
+          <div className="flex-1 overflow-hidden">
           <ProTimeline
             timeline={currentTimeline}
             playTime={playTime}
@@ -2274,6 +2303,7 @@ export function ProjectEditor({ project }: { project: Project }) {
             onClearInOut={() => { setInPoint(null); setOutPoint(null); }}
             onDropAsset={insertAssetAtIndex}
           />
+          </div>
         </div>
       ) : (
         <div className="flex-shrink-0 border-t border-border bg-surface p-3">

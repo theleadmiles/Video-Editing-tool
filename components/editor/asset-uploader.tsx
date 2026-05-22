@@ -36,27 +36,47 @@ export function AssetUploader({ kind, onUpload, label, hint }: AssetUploaderProp
     setProgress(0);
 
     try {
-      // Animate progress while uploading (real progress requires XHR)
-      const fakeProgress = setInterval(() => {
-        setProgress((p) => Math.min(p + Math.random() * 8, 90));
-      }, 200);
-
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("kind", kind);
-
-      const res = await fetch("/api/upload-asset", {
+      // Step 1 — get a presigned R2 PUT URL (bypasses Vercel's 4.5 MB body limit)
+      const urlRes = await fetch("/api/storage/upload-url", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, content_type: file.type }),
+      });
+      const urlData = await urlRes.json();
+      if (!urlRes.ok) throw new Error(urlData.error || "Could not get upload URL");
+      const { signed_url, public_url } = urlData as { signed_url: string; public_url: string };
+
+      // Step 2 — PUT directly to R2 with real XHR progress
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", signed_url);
+        xhr.setRequestHeader("Content-Type", file.type);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setProgress((e.loaded / e.total) * 88);
+        };
+        xhr.onload  = () => xhr.status < 300 ? resolve() : reject(new Error(`Upload error (${xhr.status})`));
+        xhr.onerror = () => reject(new Error("Network error — check your connection"));
+        xhr.send(file);
       });
 
-      clearInterval(fakeProgress);
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Upload failed");
+      // Step 3 — register the asset in the DB
+      setProgress(95);
+      const regRes = await fetch("/api/assets/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url:        public_url,
+          type:       kind,
+          name:       file.name,
+          size_bytes: file.size,
+          mime_type:  file.type,
+        }),
+      });
+      const regData = await regRes.json();
+      if (!regRes.ok) throw new Error(regData.error || "Failed to save asset record");
 
       setProgress(100);
-      onUpload(data.asset);
+      onUpload(regData.asset);
       toast.success(`${file.name} uploaded!`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");

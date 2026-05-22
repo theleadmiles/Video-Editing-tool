@@ -61,7 +61,10 @@ export async function POST(req: NextRequest) {
   if (!filename) return NextResponse.json({ error: "filename required" }, { status: 400 });
 
   const safe   = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
-  const key    = `${workspace.id}/videos/${Date.now()}-${safe}`;
+  const folder = (content_type || "").startsWith("audio") ? "audio"
+               : (content_type || "").startsWith("image") ? "images"
+               : "videos";
+  const key    = `${workspace.id}/${folder}/${Date.now()}-${safe}`;
 
   try {
     const command   = new PutObjectCommand({ Bucket: bucketName, Key: key, ContentType: content_type });

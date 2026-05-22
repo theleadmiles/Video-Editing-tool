@@ -53,12 +53,19 @@ export function AppSidebar({ user, creditsRemaining = 0, creditsTotal = 3 }: App
   const router    = useRouter();
   const supabase  = createClient();
 
-  // Persist collapsed state in localStorage
+  // Auto-collapse in the editor; otherwise restore from localStorage
+  const isEditor = /\/projects\/[^/]+\/edit/.test(pathname);
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
     const stored = localStorage.getItem("sidebar-collapsed");
-    if (stored !== null) setCollapsed(stored === "true");
-  }, []);
+    if (stored !== null) {
+      setCollapsed(stored === "true");
+    } else if (isEditor) {
+      // First visit to editor — collapse by default
+      setCollapsed(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditor]);
   function toggle() {
     setCollapsed((v) => {
       localStorage.setItem("sidebar-collapsed", String(!v));
