@@ -22,7 +22,7 @@ import { CaptionInspector } from "./caption-inspector";
 import { EmphasisStyleEditor } from "./emphasis-style-editor";
 import { ClipEffectsPanel } from "./clip-effects-panel";
 import { ContextMenu, type ContextMenuItem } from "@/components/ui/context-menu";
-import { CAPTION_STYLES, findStyle } from "@/lib/caption-styles";
+import { CAPTION_STYLES, findStyle, applyStyleToClip } from "@/lib/caption-styles";
 import { DEFAULT_EMPHASIS_STYLE, type EmphasisStyle } from "@/lib/emphasis-styles";
 import {
   ChevronLeft, Download, Share2,
@@ -1852,6 +1852,7 @@ export function ProjectEditor({ project }: { project: Project }) {
                   isPlaying={isPlaying}
                   isMuted={isMuted}
                   emphasisStyle={emphasisStyle}
+                  playTime={playTime}
                   onTimeUpdate={(t) => setPlayTime(t)}
                 />
                 {/* Controls overlay */}
@@ -1887,7 +1888,7 @@ export function ProjectEditor({ project }: { project: Project }) {
             {project.aspect_ratio === "16:9" && (
               <div className="relative rounded-2xl overflow-hidden border border-border shadow-[0_0_80px_rgba(0,0,0,0.9)]"
                 style={{ width: `${600 * previewZoom}px`, height: `${338 * previewZoom}px` }}>
-                <VideoPlayer clips={brollClips} currentClipIndex={currentClipIndex} currentCaption={currentCaption} isPlaying={isPlaying} isMuted={isMuted} emphasisStyle={emphasisStyle} onTimeUpdate={(t) => setPlayTime(t)} />
+                <VideoPlayer clips={brollClips} currentClipIndex={currentClipIndex} currentCaption={currentCaption} isPlaying={isPlaying} isMuted={isMuted} emphasisStyle={emphasisStyle} playTime={playTime} onTimeUpdate={(t) => setPlayTime(t)} />
                 <div className="absolute inset-0 z-10 flex items-center justify-center">
                   <button onClick={togglePlay} className="flex h-16 w-16 items-center justify-center rounded-full bg-black/40 backdrop-blur border border-white/20 hover:bg-black/60 transition-all">
                     {isPlaying ? <Pause className="h-7 w-7 text-white" /> : <Play className="h-7 w-7 text-white ml-1" />}
@@ -1906,7 +1907,7 @@ export function ProjectEditor({ project }: { project: Project }) {
             {project.aspect_ratio === "1:1" && (
               <div className="relative rounded-2xl overflow-hidden border border-border shadow-[0_0_80px_rgba(0,0,0,0.9)]"
                 style={{ width: `${380 * previewZoom}px`, height: `${380 * previewZoom}px` }}>
-                <VideoPlayer clips={brollClips} currentClipIndex={currentClipIndex} currentCaption={currentCaption} isPlaying={isPlaying} isMuted={isMuted} emphasisStyle={emphasisStyle} onTimeUpdate={(t) => setPlayTime(t)} />
+                <VideoPlayer clips={brollClips} currentClipIndex={currentClipIndex} currentCaption={currentCaption} isPlaying={isPlaying} isMuted={isMuted} emphasisStyle={emphasisStyle} playTime={playTime} onTimeUpdate={(t) => setPlayTime(t)} />
                 <div className="absolute inset-0 z-10 flex items-center justify-center">
                   <button onClick={togglePlay} className="flex h-14 w-14 items-center justify-center rounded-full bg-black/40 backdrop-blur border border-white/20 hover:bg-black/60 transition-all">
                     {isPlaying ? <Pause className="h-6 w-6 text-white" /> : <Play className="h-6 w-6 text-white ml-1" />}
@@ -1986,16 +1987,11 @@ export function ProjectEditor({ project }: { project: Project }) {
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-2">Presets</p>
                 <CaptionTemplatePicker
                   selectedId={activeCaptionStyleId}
+                  activeStyle={activeCaptionStyleId ? (CAPTION_STYLES.find((s) => s.id === activeCaptionStyleId) ?? null) : null}
                   onSelect={(style) => {
                     setActiveCaptionStyleId(style.id);
-                    setEditedCaptions((prev) => prev.map((c) => ({
-                      ...c,
-                      color: style.color,
-                      font_size: style.font_size,
-                      font_family: style.font_family,
-                      animation: style.animation,
-                      position: { x: style.position_x, y: style.position_y },
-                    })));
+                    // applyStyleToClip stamps ALL 11 CaptionStyle properties onto every caption clip
+                    setEditedCaptions((prev) => prev.map((c) => applyStyleToClip(c, style)));
                     toast.success(`${style.label} applied — click Save`);
                   }}
                   compact

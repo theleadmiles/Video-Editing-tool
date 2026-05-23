@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
-const WORDS_PER_CHUNK = 5;
+const MAX_WORDS_PER_CHUNK = 5;
+const SILENCE_THRESHOLD = 0.4; // seconds — force chunk break on gap >= this
 
 function adminClient() {
   return createAdminClient(
@@ -124,6 +125,18 @@ export async function GET(
 
 // ── Caption helpers ──────────────────────────────────────────────────────────
 
+/**
+ * Build caption clips from word-level timestamps.
+ *
+ * Chunk rules (applied in order, first match wins):
+ *   1. Silence gap ≥ SILENCE_THRESHOLD between the previous and current word
+ *      → flush existing chunk, start a new one with the current word.
+ *   2. Chunk already has MAX_WORDS_PER_CHUNK words → flush, then add current word.
+ *
+ * Each clip stores `word_timings` so the VideoPlayer can do karaoke highlighting.
+ * Duration is the exact word span (last_word.end − first_word.start), not padded
+ * into silence. This prevents cross-sentence bleed.
+ */
 function buildCaptionClips(
   words: { text: string; start: number; end: number }[],
   fallbackText: string,
@@ -131,28 +144,59 @@ function buildCaptionClips(
 ) {
   if (!words.length) {
     return [{
-      id: crypto.randomUUID(), text: fallbackText,
-      start_time: 0, duration: totalDuration,
-      animation: "fade" as const, color: "#FFFFFF", font_size: 32,
-      position: { x: 50, y: 80 },
+      id:          crypto.randomUUID(),
+      text:        fallbackText,
+      start_time:  0,
+      duration:    totalDuration,
+      animation:   "fade" as const,
+      color:       "#FFFFFF",
+      font_size:   36,
+      font_weight: 600,
+      font_family: "Inter",
+      position:    { x: 50, y: 80 },
+      word_timings: [] as { word: string; start: number; end: number }[],
     }];
   }
 
-  const clips = [];
-  for (let i = 0; i < words.length; i += WORDS_PER_CHUNK) {
-    const chunk = words.slice(i, i + WORDS_PER_CHUNK);
-    const start = chunk[0].start;
-    const end   = chunk[chunk.length - 1].end;
-    clips.push({
-      id:         crypto.randomUUID(),
-      text:       chunk.map(w => w.text).join(" ").trim(),
-      start_time: start,
-      duration:   Math.max(end - start, 0.3),
-      animation:  "fade" as const,
-      color:      "#FFFFFF",
-      font_size:  32,
-      position:   { x: 50, y: 80 },
+  type WordEntry = { text: string; start: number; end: number };
+  type CaptionClip = {
+    id: string; text: string; start_time: number; duration: number;
+    animation: "fade"; color: string; font_size: number; font_weight: number;
+    font_family: string; position: { x: number; y: number };
+    word_timings: { word: string; start: number; end: number }[];
+  };
+  const result: CaptionClip[] = [];
+  let bucket: WordEntry[] = [];
+
+  const flush = () => {
+    if (!bucket.length) return;
+    const first = bucket[0];
+    const last  = bucket[bucket.length - 1];
+    result.push({
+      id:          crypto.randomUUID(),
+      text:        bucket.map((w) => w.text).join(" ").trim(),
+      start_time:  first.start,
+      duration:    Math.max(last.end - first.start, 0.25),
+      animation:   "fade" as const,
+      color:       "#FFFFFF",
+      font_size:   36,
+      font_weight: 600,
+      font_family: "Inter",
+      position:    { x: 50, y: 80 },
+      word_timings: bucket.map((w) => ({ word: w.text, start: w.start, end: w.end })),
     });
+    bucket = [];
+  };
+
+  for (const word of words) {
+    const prev = bucket[bucket.length - 1];
+    const silenceBreak = prev !== undefined && (word.start - prev.end) >= SILENCE_THRESHOLD;
+    const sizeBreak    = bucket.length >= MAX_WORDS_PER_CHUNK;
+
+    if (silenceBreak || sizeBreak) flush();
+    bucket.push(word);
   }
-  return clips;
+  flush(); // remaining words
+
+  return result;
 }

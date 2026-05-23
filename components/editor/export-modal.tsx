@@ -105,19 +105,45 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
 
-    // Captions
+    // Captions — use full CaptionStyle properties stored on the clip
     const cap = captions.find((c) => t >= c.start_time && t < c.start_time + c.duration);
     if (cap?.text) {
-      const fs = w >= 1280 ? 54 : 44;
-      ctx.font = `bold ${fs}px Inter, system-ui, sans-serif`;
-      ctx.fillStyle = cap.color || "#FFFFFF";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.shadowColor = "rgba(0,0,0,0.9)";
-      ctx.shadowBlur = 14;
+      // Scale base font size from preview (authored for 480px tall) to export height
+      const scale       = h / 480;
+      const baseFontSize = cap.font_size || 36;
+      const fs          = Math.round(baseFontSize * scale);
+      const fontWeight  = cap.font_weight || 600;
+      const fontFamily  = cap.font_family || "Inter";
+      const color       = cap.color || "#FFFFFF";
+      const posXPct     = (cap.position?.x ?? 50) / 100;
+      const posYPct     = (cap.position?.y ?? 80) / 100;
+      const maxWidthPct = (cap.max_width_pct ?? 85) / 100;
+      const textTransform = cap.text_transform ?? "none";
 
-      const maxW = w * 0.84;
-      const words = String(cap.text).split(" ");
+      // Apply text transform to content
+      const rawText = String(cap.text).replace(/\*([^*]+)\*/g, "$1"); // strip emphasis markers
+      const displayText = textTransform === "uppercase" ? rawText.toUpperCase()
+                        : textTransform === "lowercase" ? rawText.toLowerCase()
+                        : rawText;
+
+      ctx.save();
+      ctx.font       = `${fontWeight} ${fs}px ${fontFamily}, system-ui, sans-serif`;
+      ctx.textAlign  = "center";
+      ctx.textBaseline = "middle";
+
+      // Stroke (outline)
+      if (cap.stroke_color && cap.stroke_width && cap.stroke_width > 0) {
+        ctx.strokeStyle = cap.stroke_color;
+        ctx.lineWidth   = cap.stroke_width * scale;
+        ctx.lineJoin    = "round";
+      } else {
+        ctx.shadowColor = "rgba(0,0,0,0.92)";
+        ctx.shadowBlur  = 12 * scale;
+      }
+
+      // Word-wrap
+      const maxW = w * maxWidthPct;
+      const words = displayText.split(" ");
       const lines: string[] = [];
       let line = "";
       for (const word of words) {
@@ -127,10 +153,35 @@ export function ExportModal({ project, onClose }: ExportModalProps) {
       }
       if (line) lines.push(line);
 
-      const lh = fs * 1.35;
-      const startY = h * 0.8 - ((lines.length - 1) * lh) / 2;
-      lines.forEach((l, i) => ctx.fillText(l, w / 2, startY + i * lh));
-      ctx.shadowBlur = 0;
+      const lh     = fs * 1.3;
+      const totalH = lh * lines.length;
+      const startX = w * posXPct;
+      const startY = h * posYPct - totalH / 2 + lh / 2;
+
+      // Background box (e.g. subtitle style)
+      if (cap.background_css) {
+        const padV = fs * 0.15;
+        const padH = fs * 0.3;
+        const boxW = lines.reduce((max, l) => Math.max(max, ctx.measureText(l).width), 0) + padH * 2;
+        const boxH = totalH + padV * 2;
+        const boxX = startX - boxW / 2;
+        const boxY = startY - lh / 2 - padV;
+        ctx.fillStyle   = cap.background_css;
+        ctx.beginPath();
+        ctx.roundRect(boxX, boxY, boxW, boxH, 4 * scale);
+        ctx.fill();
+      }
+
+      lines.forEach((l, i) => {
+        const y = startY + i * lh;
+        if (cap.stroke_color && cap.stroke_width && cap.stroke_width > 0) {
+          ctx.strokeText(l, startX, y);
+        }
+        ctx.fillStyle = color;
+        ctx.fillText(l, startX, y);
+      });
+
+      ctx.restore();
     }
   }
 

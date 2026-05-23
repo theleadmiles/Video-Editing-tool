@@ -101,7 +101,7 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     id: "cinematic",
     label: "Cinematic",
     description: "Subtle bottom subtitles, movie-style.",
-    font_family: "Geist Sans",
+    font_family: "Inter",
     font_size: 28,
     font_weight: 500,
     color: "#FFFFFF",
@@ -166,6 +166,37 @@ export const CAPTION_STYLES: CaptionStyle[] = [
 
 export function findStyle(id: string | undefined | null): CaptionStyle {
   return CAPTION_STYLES.find((s) => s.id === id) || CAPTION_STYLES[0];
+}
+
+/**
+ * Apply every property of a CaptionStyle onto a TimelineClip,
+ * producing a new clip object with all rendering fields set.
+ * Used when the user picks a template or restores a saved preset.
+ */
+export function applyStyleToClip<T extends {
+  color?: string; font_size?: number; font_family?: string;
+  font_weight?: number; animation?: string;
+  position?: { x: number; y: number };
+  text_transform?: "uppercase" | "lowercase" | "none";
+  letter_spacing?: number; stroke_color?: string; stroke_width?: number;
+  background_css?: string; bg_padding?: string; max_width_pct?: number;
+}>(clip: T, style: CaptionStyle): T {
+  return {
+    ...clip,
+    color:          style.color,
+    font_size:      style.font_size,
+    font_family:    style.font_family,
+    font_weight:    style.font_weight,
+    animation:      style.animation,
+    position:       { x: style.position_x, y: style.position_y },
+    text_transform: style.text_transform ?? "none",
+    letter_spacing: style.letter_spacing ?? 0,
+    stroke_color:   style.stroke_color,
+    stroke_width:   style.stroke_width,
+    background_css: style.background,
+    bg_padding:     style.padding,
+    max_width_pct:  style.max_width,
+  };
 }
 
 /**

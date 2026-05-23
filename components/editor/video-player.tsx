@@ -19,6 +19,8 @@ interface VideoPlayerProps {
   isPlaying: boolean;
   isMuted?: boolean;
   emphasisStyle?: EmphasisStyle;
+  /** Global playhead time (seconds) — required for karaoke word highlighting */
+  playTime?: number;
   onTimeUpdate?: (globalTime: number) => void;
 }
 
@@ -29,6 +31,7 @@ export function VideoPlayer({
   isPlaying,
   isMuted = false,
   emphasisStyle,
+  playTime = 0,
   onTimeUpdate,
 }: VideoPlayerProps) {
   const effectiveEmphasis = emphasisStyle || DEFAULT_EMPHASIS_STYLE;
@@ -162,50 +165,137 @@ export function VideoPlayer({
       {/* Gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-transparent to-black/65 pointer-events-none" />
 
-      {/* Caption overlay — respects position, color, font, animation, emphasis */}
+      {/* Caption overlay — full style, karaoke, all animations */}
       {currentCaption?.text && (() => {
-        const text = String(currentCaption.text);
-        const segments = parseCaptionText(text);
-        const posY = currentCaption.position?.y ?? 80;
-        const posX = currentCaption.position?.x ?? 50;
-        const color = currentCaption.color || "#FFFFFF";
-        const fontSize = currentCaption.font_size || 36;
-        // Append system-ui so Hindi/Devanagari & other scripts fall back to system fonts
-        const fontFamily = `${currentCaption.font_family || "Inter"}, system-ui, sans-serif`;
-        const animation = currentCaption.animation || "fade";
+        const text        = String(currentCaption.text);
+        const posY        = currentCaption.position?.y ?? 80;
+        const posX        = currentCaption.position?.x ?? 50;
+        const color       = currentCaption.color || "#FFFFFF";
+        const fontSize    = currentCaption.font_size || 36;
+        const fontWeight  = currentCaption.font_weight || 600;
+        // Append system-ui for Devanagari / CJK / Arabic script fallback
+        const fontFamily  = `${currentCaption.font_family || "Inter"}, system-ui, sans-serif`;
+        const animation   = currentCaption.animation || "fade";
+        const textTransform = currentCaption.text_transform ?? "none";
+        const letterSpacing = currentCaption.letter_spacing ?? 0;
+        const strokeColor   = currentCaption.stroke_color;
+        const strokeWidth   = currentCaption.stroke_width ?? 0;
+        const bgCss         = currentCaption.background_css;
+        const bgPad         = currentCaption.bg_padding;
+        const maxWidthPct   = currentCaption.max_width_pct ?? 85;
 
-        // Scale font size to fit preview frame (16-pixel base maps to ~36px source)
-        const previewFontSize = Math.min(fontSize / 2.5, 22);
+        // Scale font to preview frame (styles authored at ~1.8× preview size)
+        const previewFontSize = fontSize / 1.8;
+
+        // Stroke or text-shadow fallback
+        const strokeStyle: React.CSSProperties = strokeColor && strokeWidth > 0
+          ? {
+              WebkitTextStroke: `${(strokeWidth * 0.25).toFixed(1)}px ${strokeColor}`,
+              paintOrder: "stroke fill" as React.CSSProperties["paintOrder"],
+            }
+          : {
+              textShadow: "0 2px 8px rgba(0,0,0,0.95), 0 0 3px rgba(0,0,0,0.7)",
+            };
+
+        const sharedTextStyle: React.CSSProperties = {
+          fontFamily,
+          fontSize:       previewFontSize,
+          fontWeight,
+          color,
+          textTransform:  textTransform !== "none" ? textTransform : undefined,
+          letterSpacing:  letterSpacing ? `${letterSpacing}em` : undefined,
+          lineHeight:     1.25,
+          textAlign:      "center",
+          whiteSpace:     "normal",
+          wordBreak:      "break-word",
+          background:     bgCss || undefined,
+          padding:        bgCss && bgPad ? bgPad : undefined,
+          borderRadius:   bgCss ? 4 : undefined,
+          ...strokeStyle,
+        };
+
+        // ── KARAOKE mode — word-by-word highlight ──────────────────────────
+        if (animation === "karaoke" && currentCaption.word_timings?.length) {
+          const timings = currentCaption.word_timings;
+          // Find the word that's actively being spoken
+          const activeIdx = timings.reduce((found, wt, idx) =>
+            playTime >= wt.start && playTime < wt.end ? idx : found
+          , -1);
+
+          return (
+            <div
+              key={currentCaption.id}
+              className="absolute pointer-events-none"
+              style={{
+                top:       `${posY}%`,
+                left:      `${posX}%`,
+                transform: "translate(-50%, -50%)",
+                maxWidth:  `${maxWidthPct}%`,
+              }}
+            >
+              <p
+                style={{
+                  ...sharedTextStyle,
+                  display:        "flex",
+                  flexWrap:       "wrap",
+                  gap:            "0.25em",
+                  justifyContent: "center",
+                  // karaoke base: dim all words
+                  color:          `${color}55`,
+                }}
+              >
+                {timings.map((wt, idx) => {
+                  const active = idx === activeIdx;
+                  const past   = activeIdx >= 0 && idx < activeIdx;
+                  return (
+                    <span
+                      key={idx}
+                      style={{
+                        color:      active ? (effectiveEmphasis.color || "#F0A500")
+                                    : past   ? color
+                                    : `${color}55`,
+                        fontWeight: active ? 900 : fontWeight,
+                        display:    "inline-block",
+                        transform:  active ? "scale(1.12)" : "scale(1)",
+                        transition: "color 0.08s ease, transform 0.08s ease",
+                        textShadow: active
+                          ? `0 0 12px ${effectiveEmphasis.glow_color || "#F0A500"}`
+                          : undefined,
+                        ...strokeStyle,
+                      }}
+                    >
+                      {wt.word}
+                    </span>
+                  );
+                })}
+              </p>
+            </div>
+          );
+        }
+
+        // ── Standard rendering — emphasis markers, all animations ──────────
+        const segments = parseCaptionText(text);
 
         return (
           <div
             key={currentCaption.id}
-            className="absolute left-0 right-0 pointer-events-none"
+            className="absolute pointer-events-none"
             style={{
-              top: `${posY}%`,
-              transform: `translate(-50%, -50%)`,
-              left: `${posX}%`,
-              width: "auto",
-              maxWidth: "85%",
+              top:       `${posY}%`,
+              left:      `${posX}%`,
+              transform: "translate(-50%, -50%)",
+              maxWidth:  `${maxWidthPct}%`,
             }}
           >
             <p
               className={
-                animation === "pop" ? "caption-pop" :
-                animation === "slide_up" ? "caption-slide-up" :
-                "caption-fade"
+                animation === "pop"        ? "cap-pop"   :
+                animation === "slide_up"   ? "cap-slide" :
+                animation === "slide_down" ? "cap-slide-down" :
+                animation === "type"       ? "cap-type"  :
+                "cap-fade"
               }
-              style={{
-                fontFamily,
-                fontSize: previewFontSize,
-                color,
-                fontWeight: 700,
-                lineHeight: 1.2,
-                textAlign: "center",
-                textShadow: "0 2px 10px rgba(0,0,0,0.95), 0 0 4px rgba(0,0,0,0.8)",
-                whiteSpace: "normal",
-                wordBreak: "break-word",
-              }}
+              style={sharedTextStyle}
             >
               {segments.map((seg, i) => (
                 seg.emphasis ? (
@@ -223,18 +313,28 @@ export function VideoPlayer({
             </p>
 
             <style jsx>{`
-              .caption-fade { animation: capFade 0.3s ease-out; }
-              .caption-pop { animation: capPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
-              .caption-slide-up { animation: capSlide 0.4s ease-out; }
+              .cap-fade       { animation: capFade 0.3s ease-out both; }
+              .cap-pop        { animation: capPop  0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+              .cap-slide      { animation: capSlideUp   0.35s ease-out both; }
+              .cap-slide-down { animation: capSlideDown 0.35s ease-out both; }
+              .cap-type       { animation: capType 0.45s steps(20, end) both; }
               @keyframes capFade { from { opacity: 0; } to { opacity: 1; } }
               @keyframes capPop {
-                0% { transform: scale(0.7); opacity: 0; }
-                60% { transform: scale(1.08); opacity: 1; }
+                0%   { transform: scale(0.6) translateY(8px); opacity: 0; }
+                65%  { transform: scale(1.07); opacity: 1; }
                 100% { transform: scale(1); }
               }
-              @keyframes capSlide {
-                from { transform: translateY(20px); opacity: 0; }
-                to { transform: translateY(0); opacity: 1; }
+              @keyframes capSlideUp {
+                from { transform: translateY(16px); opacity: 0; }
+                to   { transform: translateY(0);    opacity: 1; }
+              }
+              @keyframes capSlideDown {
+                from { transform: translateY(-16px); opacity: 0; }
+                to   { transform: translateY(0);     opacity: 1; }
+              }
+              @keyframes capType {
+                from { clip-path: inset(0 100% 0 0); opacity: 1; }
+                to   { clip-path: inset(0 0%   0 0); opacity: 1; }
               }
             `}</style>
           </div>

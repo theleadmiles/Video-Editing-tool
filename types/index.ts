@@ -60,13 +60,23 @@ export interface TimelineClip {
   duration: number;
   trim_start?: number;
   trim_end?: number;
-  // Text specific
+  // Text / caption specific
   text?: string;
   font_family?: string;
   font_size?: number;
+  font_weight?: number;
   color?: string;
   animation?: string;
   position?: { x: number; y: number };
+  // Extended caption style (set when a template is applied)
+  text_transform?: "uppercase" | "lowercase" | "none";
+  letter_spacing?: number;         // em units, e.g. 0.05
+  stroke_color?: string;           // outline colour
+  stroke_width?: number;           // outline width in px
+  background_css?: string;         // CSS background value, e.g. "rgba(0,0,0,0.75)"
+  bg_padding?: string;             // CSS padding, e.g. "4px 10px"
+  max_width_pct?: number;          // max-width as % of frame (0–100)
+  word_timings?: { word: string; start: number; end: number }[];
   // Audio specific
   volume?: number;
   // Playback
@@ -76,6 +86,17 @@ export interface TimelineClip {
   transition?: { type: string; duration: number };
   ken_burns?: { enabled: boolean; direction: string; intensity: number };
   color_grade?: { brightness: number; contrast: number; saturation: number };
+}
+
+/** User-saved caption preset stored in the DB */
+export interface SavedCaptionPreset {
+  id: string;
+  workspace_id: string;
+  name: string;
+  brand_tag?: string | null;
+  style: import("@/lib/caption-styles").CaptionStyle;
+  is_default: boolean;
+  created_at: string;
 }
 
 export interface TimelineData {

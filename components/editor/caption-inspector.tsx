@@ -60,10 +60,13 @@ function Divider() {
 export function CaptionInspector({ caption, onChange, onClose }: Props) {
   const [tab, setTab] = useState<"text" | "style" | "layout">("text");
 
-  const currentAnimation = caption.animation || "fade";
-  const currentColor = caption.color || "#FFFFFF";
-  const currentFontSize = caption.font_size || 36;
-  const currentFont = caption.font_family || "Inter";
+  const currentAnimation  = caption.animation || "fade";
+  const currentColor      = caption.color || "#FFFFFF";
+  const currentFontSize   = caption.font_size || 36;
+  const currentFontWeight = caption.font_weight || 600;
+  const currentFont       = caption.font_family || "Inter";
+  const currentStrokeColor = caption.stroke_color || "#000000";
+  const currentStrokeWidth = caption.stroke_width ?? 0;
 
   return (
     <div className="rounded-xl border border-gold-500/30 bg-surface shadow-card overflow-hidden w-full">
@@ -208,6 +211,83 @@ export function CaptionInspector({ caption, onChange, onClose }: Props) {
                 <span>Small</span>
                 <span>Medium</span>
                 <span>Large</span>
+              </div>
+            </div>
+
+            <Divider />
+
+            {/* Font weight */}
+            <div>
+              <SectionLabel>
+                Weight —{" "}
+                <span className="font-mono text-white normal-case tracking-normal">
+                  {currentFontWeight}
+                </span>
+              </SectionLabel>
+              <div className="grid grid-cols-4 gap-1.5">
+                {([300, 400, 700, 900] as const).map((w) => (
+                  <button
+                    key={w}
+                    onClick={() => onChange({ font_weight: w })}
+                    style={{ fontWeight: w }}
+                    className={cn(
+                      "rounded-lg border py-2 text-xs transition-all",
+                      currentFontWeight === w
+                        ? "border-gold-500/60 bg-gold-500/10 text-gold-400"
+                        : "border-border bg-elevated text-subtle hover:text-white hover:border-border-strong"
+                    )}
+                  >
+                    {w === 300 ? "Light" : w === 400 ? "Normal" : w === 700 ? "Bold" : "Black"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <Divider />
+
+            {/* Stroke / outline */}
+            <div>
+              <SectionLabel>Text outline</SectionLabel>
+              <div className="flex items-center gap-3">
+                {/* Stroke colour */}
+                <label
+                  title="Outline colour"
+                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-border overflow-hidden cursor-pointer hover:border-gold-500/50"
+                >
+                  <input
+                    type="color"
+                    value={currentStrokeColor}
+                    onChange={(e) => onChange({ stroke_color: e.target.value })}
+                    className="sr-only"
+                  />
+                  <div
+                    className="h-full w-full"
+                    style={{ backgroundColor: currentStrokeColor }}
+                  />
+                </label>
+                {/* Stroke width */}
+                <div className="flex-1">
+                  <input
+                    type="range"
+                    min={0}
+                    max={12}
+                    step={1}
+                    value={currentStrokeWidth}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      onChange({
+                        stroke_width: v,
+                        stroke_color: v > 0 ? currentStrokeColor : undefined,
+                      });
+                    }}
+                    className="w-full accent-gold-500 h-1.5 rounded-full"
+                  />
+                  <div className="flex justify-between text-[9px] text-muted mt-1">
+                    <span>None</span>
+                    <span>{currentStrokeWidth}px</span>
+                    <span>Thick</span>
+                  </div>
+                </div>
               </div>
             </div>
 
