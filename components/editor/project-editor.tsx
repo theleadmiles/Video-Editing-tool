@@ -1412,116 +1412,132 @@ export function ProjectEditor({ project }: { project: Project }) {
 
                   <div
                     ref={captionListRef}
-                    className="flex-1 overflow-y-auto px-2 pb-3 space-y-1"
+                    className="flex-1 overflow-y-auto px-2 pb-3 space-y-1 scroll-thin"
                   >
                     {editedCaptions.map((cap, i) => {
-                      const active = currentCaption?.id === cap.id;
+                      const active   = currentCaption?.id === cap.id;
                       const selected = selectedCaptionId === cap.id;
+                      const canSplit = playTime > cap.start_time && playTime < cap.start_time + cap.duration;
+                      const canMerge = i < editedCaptions.length - 1;
                       return (
                         <div
                           key={cap.id}
                           ref={active ? activeCaptionRef : undefined}
                           className={cn(
-                            "group rounded-xl border transition-all",
+                            "caption-row group relative rounded-xl border transition-all duration-100 overflow-hidden cursor-pointer",
                             active
-                              ? "border-gold-500/70 bg-gold-500/8 ring-1 ring-gold-500/20"
+                              ? "border-gold-500/50 bg-gold-500/6 shadow-[inset_2px_0_0_#10C8D8]"
                               : selected
-                                ? "border-gold-500/40 bg-gold-500/5"
-                                : "border-border bg-elevated/40 hover:border-border-strong"
+                                ? "border-gold-500/30 bg-gold-500/4 shadow-[inset_2px_0_0_rgba(16,200,216,0.4)]"
+                                : "border-border/60 bg-elevated/30 hover:bg-elevated/60 hover:border-border"
                           )}
+                          onClick={() => setSelectedCaptionId(cap.id === selectedCaptionId ? null : cap.id)}
                         >
-                          {/* Time + delete row */}
-                          <div className="flex items-center gap-1.5 px-2.5 pt-2 pb-0.5">
-                            <span className={cn(
-                              "text-[10px] font-mono font-medium flex-shrink-0 px-1.5 py-0.5 rounded-md",
-                              active ? "bg-gold-500/20 text-gold-400" : "text-muted bg-elevated/60"
-                            )}>
-                              {cap.start_time.toFixed(1)}s
-                            </span>
-                            <span className="text-[9px] text-muted/60">→</span>
-                            <span className="text-[10px] font-mono text-muted">
-                              {(cap.start_time + cap.duration).toFixed(1)}s
-                            </span>
-                            {cap.speaker && (
+                          {/* Top row: speaker dot + timing + duration + actions */}
+                          <div className="flex items-center gap-1.5 px-2.5 pt-2 pb-1">
+                            {/* Speaker dot */}
+                            {cap.speaker ? (
                               <span
-                                className="text-[8px] font-bold px-1 py-0.5 rounded-sm"
-                                style={{ backgroundColor: cap.speaker_color ?? "#ffffff22", color: cap.speaker_color ?? "#fff" }}
-                              >
-                                {cap.speaker}
-                              </span>
+                                className="h-2 w-2 rounded-full flex-shrink-0 ring-1 ring-black/20"
+                                style={{ backgroundColor: cap.speaker_color ?? "#10C8D8" }}
+                                title={`Speaker ${cap.speaker}`}
+                              />
+                            ) : (
+                              <span className={cn(
+                                "h-2 w-2 rounded-full flex-shrink-0",
+                                active ? "bg-gold-500" : "bg-border"
+                              )} />
                             )}
+
+                            {/* Timing M:SS → M:SS */}
+                            <span className={cn(
+                              "text-[10px] font-mono font-semibold tabular-nums flex-shrink-0",
+                              active ? "text-gold-400" : "text-muted"
+                            )}>
+                              {formatDuration(Math.floor(cap.start_time))}
+                            </span>
+                            <span className="text-[9px] text-muted/40">→</span>
+                            <span className="text-[10px] font-mono text-muted/60 tabular-nums flex-shrink-0">
+                              {formatDuration(Math.floor(cap.start_time + cap.duration))}
+                            </span>
+
+                            {/* Duration chip */}
+                            <span className={cn(
+                              "text-[8px] font-medium px-1.5 py-0.5 rounded-full tabular-nums flex-shrink-0",
+                              active ? "bg-gold-500/15 text-gold-400" : "bg-elevated text-muted/60"
+                            )}>
+                              {cap.duration.toFixed(1)}s
+                            </span>
+
+                            {/* Playing indicator */}
                             {active && (
-                              <span className="ml-auto text-[9px] text-gold-500 font-medium flex items-center gap-0.5">
+                              <span className="flex items-center gap-0.5 text-[8px] text-gold-500 font-medium ml-auto">
                                 <span className="h-1 w-1 rounded-full bg-gold-500 animate-pulse" />
-                                playing
+                                live
                               </span>
                             )}
-                            {/* Split at playhead — only shown when playhead is inside this clip */}
-                            {playTime > cap.start_time && playTime < cap.start_time + cap.duration && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditedCaptions(splitCaption(editedCaptions, i, playTime));
-                                }}
-                                title="Split at playhead"
-                                aria-label="Split caption at playhead"
-                                className="opacity-0 group-hover:opacity-100 text-muted hover:text-gold-400 transition-all flex-shrink-0"
-                              >
-                                <ScissorsIcon className="h-2.5 w-2.5" />
-                              </button>
-                            )}
-                            {/* Merge with next caption */}
-                            {i < editedCaptions.length - 1 && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditedCaptions(mergeCaptions(editedCaptions, i));
-                                }}
-                                title="Merge with next caption"
-                                aria-label="Merge with next caption"
-                                className="opacity-0 group-hover:opacity-100 text-muted hover:text-gold-400 transition-all flex-shrink-0"
-                              >
-                                <GitMerge className="h-2.5 w-2.5" />
-                              </button>
-                            )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditedCaptions((prev) => prev.filter((_, j) => j !== i));
-                                if (selectedCaptionId === cap.id) setSelectedCaptionId(null);
-                              }}
-                              aria-label={`Delete caption ${i + 1}`}
-                              className={cn(
-                                "opacity-0 group-hover:opacity-100 ml-auto text-muted hover:text-ember-400 transition-all flex-shrink-0",
-                                active && "ml-1"
+
+                            {/* Hover actions */}
+                            <div className={cn("caption-row-actions flex items-center gap-0.5", active ? "ml-1" : "ml-auto")}>
+                              {canSplit && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setEditedCaptions(splitCaption(editedCaptions, i, playTime)); }}
+                                  title="Split at playhead"
+                                  className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-gold-400 hover:bg-gold-500/10 transition-colors"
+                                >
+                                  <ScissorsIcon className="h-2.5 w-2.5" />
+                                </button>
                               )}
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
+                              {canMerge && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setEditedCaptions(mergeCaptions(editedCaptions, i)); }}
+                                  title="Merge with next"
+                                  className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-gold-400 hover:bg-gold-500/10 transition-colors"
+                                >
+                                  <GitMerge className="h-2.5 w-2.5" />
+                                </button>
+                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditedCaptions((prev) => prev.filter((_, j) => j !== i));
+                                  if (selectedCaptionId === cap.id) setSelectedCaptionId(null);
+                                }}
+                                title="Delete caption"
+                                className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-ember-400 hover:bg-ember-500/10 transition-colors"
+                              >
+                                <X className="h-2.5 w-2.5" />
+                              </button>
+                            </div>
                           </div>
 
-                          {/* Text + style trigger */}
-                          <div className="px-2.5 pb-2">
+                          {/* Caption text */}
+                          <div className="px-2.5 pb-2.5">
                             <textarea
                               value={String(cap.text || "")}
-                              onChange={(e) => setEditedCaptions((prev) =>
-                                prev.map((c, j) => j === i ? { ...c, text: e.target.value } : c)
-                              )}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                setEditedCaptions((prev) =>
+                                  prev.map((c, j) => j === i ? { ...c, text: e.target.value } : c)
+                                );
+                              }}
+                              onClick={(e) => e.stopPropagation()}
                               rows={2}
                               className={cn(
-                                "w-full bg-transparent text-xs leading-relaxed focus:outline-none resize-none",
-                                active ? "text-white" : "text-subtle focus:text-white"
+                                "w-full bg-transparent text-[12px] leading-relaxed focus:outline-none resize-none transition-colors",
+                                active ? "text-white font-medium" : "text-subtle focus:text-white"
                               )}
                               placeholder="Caption text…"
                             />
+                            {/* Style toggle */}
                             <button
-                              onClick={() => setSelectedCaptionId(cap.id === selectedCaptionId ? null : cap.id)}
+                              onClick={(e) => { e.stopPropagation(); setSelectedCaptionId(cap.id === selectedCaptionId ? null : cap.id); }}
                               className={cn(
-                                "text-[9px] transition-all",
-                                selected ? "text-gold-500" : "text-muted hover:text-gold-500"
+                                "text-[9px] font-medium transition-colors",
+                                selected ? "text-gold-400" : "text-muted/60 hover:text-gold-400"
                               )}
                             >
-                              {selected ? "▲ Style ›" : "▼ Style"}
+                              {selected ? "↑ hide style" : "↓ edit style"}
                             </button>
                           </div>
                         </div>

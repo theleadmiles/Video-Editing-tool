@@ -26,23 +26,79 @@
     font-family: var(--font-inter), system-ui, sans-serif;
   }
 
-  /* Custom scrollbar — teal-tinted */
+  /* Custom scrollbar — thin, unobtrusive */
   ::-webkit-scrollbar {
-    width: 5px;
-    height: 5px;
+    width: 4px;
+    height: 4px;
   }
 
   ::-webkit-scrollbar-track {
-    background: #040C0F;
+    background: transparent;
   }
 
   ::-webkit-scrollbar-thumb {
     background: #1A3840;
-    border-radius: 3px;
+    border-radius: 9999px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
     background: #255C68;
+  }
+
+  /* Custom range slider — premium styled */
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 9999px;
+    background: #1A3840;
+    cursor: pointer;
+    outline: none;
+  }
+  input[type="range"]:hover {
+    background: #255C68;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #10C8D8;
+    border: 2px solid #040C0F;
+    box-shadow: 0 0 8px rgba(16, 200, 216, 0.45);
+    cursor: pointer;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: 0 0 12px rgba(16, 200, 216, 0.65);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #10C8D8;
+    border: 2px solid #040C0F;
+    box-shadow: 0 0 8px rgba(16, 200, 216, 0.45);
+    cursor: pointer;
+  }
+  input[type="range"]::-moz-range-track {
+    height: 4px;
+    background: #1A3840;
+    border-radius: 9999px;
+  }
+
+  /* Focus ring — clean offset outline */
+  :focus-visible {
+    outline: 2px solid rgba(16, 200, 216, 0.65);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* Button active press feedback */
+  button:not(:disabled):active {
+    transform: scale(0.97);
   }
 
   /* Selection — ocean teal tint */
@@ -68,6 +124,35 @@
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
+
+  /* Panel slide-in animation */
+  .panel-enter {
+    animation: panelSlideIn 0.15s cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+  @keyframes panelSlideIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  /* Thin scrollbar — only shows on hover */
+  .scroll-thin::-webkit-scrollbar { width: 3px; }
+  .scroll-thin::-webkit-scrollbar-track { background: transparent; }
+  .scroll-thin::-webkit-scrollbar-thumb { background: transparent; border-radius: 9999px; }
+  .scroll-thin:hover::-webkit-scrollbar-thumb { background: #1A3840; }
+
+  /* Caption row hover actions */
+  .caption-row-actions {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .caption-row:hover .caption-row-actions {
+    opacity: 1;
+  }
+
+  /* AI panel category color accents */
+  .ai-cat-enhance { color: #10C8D8; }
+  .ai-cat-fix     { color: #FBBF24; }
+  .ai-cat-transform { color: #A78BFA; }
 
   /* Noise texture overlay */
   .noise {
