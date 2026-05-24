@@ -94,7 +94,10 @@ export async function GET(
             //    cases where AssemblyAI omits the field.
             const detectedLang   = (aData as { language_code?: string }).language_code;
             const fullText       = captions.map((c) => c.text).join(" ");
-            const hasNonLatin    = /[ऀ-ॿ؀-ۿ一-鿿぀-ゟ゠-ヿ฀-๿ঀ-৿઀-૿଀-୿ఀ-౿]/.test(fullText);
+            // \u escape sequences — immune to file-encoding issues
+            // Devanagari | Arabic | CJK | Hiragana | Katakana | Thai |
+            // Bengali | Gurmukhi | Gujarati | Oriya | Tamil | Telugu | Kannada | Malayalam
+            const hasNonLatin    = /[ऀ-ॿ؀-ۿ一-鿿぀-ゟ゠-ヿ฀-๿ঀ-৿਀-੿઀-૿଀-୿஀-௿ఀ-౿ಀ-೿ഀ-ൿ]/.test(fullText);
             const langCodeNonEn  = detectedLang ? detectedLang !== "en" : false;
             const wantedEnglish  = !languageName || languageName === "English";
 
