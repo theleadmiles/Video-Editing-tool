@@ -6,11 +6,11 @@
  *
  * Set in .env.local:
  *   OPENROUTER_API_KEY=sk-or-...
- *   OPENROUTER_MODEL=anthropic/claude-3.5-sonnet   ← optional, this is the default
+ *   OPENROUTER_MODEL=anthropic/claude-3.5-sonnet:beta   ← optional, this is the default
  *
  * Popular models available on OpenRouter:
- *   anthropic/claude-3.5-sonnet          — fast, smart, great for scripts
- *   anthropic/claude-3.5-haiku           — cheaper, still very capable
+ *   anthropic/claude-3.5-sonnet:beta     — fast, smart, great for scripts
+ *   anthropic/claude-3.5-haiku:beta      — cheaper, still very capable
  *   anthropic/claude-3-opus              — most powerful Claude 3
  *   openai/gpt-4o                        — OpenAI flagship
  *   openai/gpt-4o-mini                   — fast + cheap OpenAI
@@ -38,4 +38,4 @@ export const openrouter = new OpenAI({
  * Override via OPENROUTER_MODEL env var without touching code.
  */
 export const OR_MODEL =
-  process.env.OPENROUTER_MODEL ?? "anthropic/claude-3.5-sonnet";
+  process.env.OPENROUTER_MODEL ?? "anthropic/claude-3.5-sonnet:beta";
