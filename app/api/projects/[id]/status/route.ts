@@ -102,14 +102,28 @@ export async function GET(
             const wantedEnglish  = !languageName || languageName === "English";
 
             if (wantedEnglish && (hasNonLatin || langCodeNonEn)) {
-              console.log(`[status] Non-English detected (script=${hasNonLatin}, code=${detectedLang}) — translating to English`);
-              try {
-                const translated = await translateClipsToEnglish(captions);
-                if (translated) captions = translated;
-                else console.warn("[status] translateClipsToEnglish returned null — keeping original");
-              } catch (e) {
-                console.error("[status] auto-translate threw:", e);
-                // Non-fatal — keep original text rather than blocking the whole job
+              console.log(`[status] Non-English detected (script=${hasNonLatin}, code=${detectedLang ?? "unknown"}) — translating to English`);
+              const assemblyKey = process.env.ASSEMBLYAI_API_KEY!;
+              const assemblyId  = td!._pending!.assemblyai_id;
+              // Try AssemblyAI LeMUR first (uses existing key, no OpenRouter credits needed)
+              // Fall back to OpenRouter if LeMUR fails
+              let translated = await translateWithLeMUR(captions, assemblyId, assemblyKey);
+              if (translated) {
+                console.log("[status] LeMUR translation succeeded");
+                captions = translated;
+              } else {
+                console.warn("[status] LeMUR failed — trying OpenRouter fallback");
+                try {
+                  translated = await translateClipsToEnglish(captions);
+                  if (translated) {
+                    console.log("[status] OpenRouter translation succeeded");
+                    captions = translated;
+                  } else {
+                    console.error("[status] Both translation methods failed — captions saved in original language");
+                  }
+                } catch (e) {
+                  console.error("[status] OpenRouter translation threw:", e);
+                }
               }
             }
 
@@ -280,6 +294,69 @@ function buildCaptionClips(
   flush(); // remaining words
 
   return result;
+}
+
+/**
+ * Translate all clip texts to English using AssemblyAI LeMUR API.
+ * Uses the same ASSEMBLYAI_API_KEY — no extra credits needed.
+ * Timings and IDs are preserved — only the `text` field changes.
+ * Returns null on failure (caller falls back to OpenRouter).
+ */
+async function translateWithLeMUR<T extends { id: string; text: string }>(
+  clips: T[],
+  transcriptId: string,
+  apiKey: string,
+): Promise<T[] | null> {
+  try {
+    const payload = clips.map((c) => ({ id: c.id, text: c.text }));
+
+    const lemurRes = await fetch("https://api.assemblyai.com/lemur/v3/apply-task", {
+      method:  "POST",
+      headers: { "Authorization": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        transcript_ids: [transcriptId],
+        prompt: `Translate each caption in the following JSON array to natural English.
+Rules:
+- Each clip is a short spoken phrase (1-5 words typically)
+- Translate faithfully — do not paraphrase or summarise
+- Keep translated text approximately the same length as the original
+- Return ONLY valid JSON — no prose, no code fences
+
+Captions to translate:
+${JSON.stringify(payload, null, 2)}
+
+Return exactly: {"clips":[{"id":"...","text":"..."}]}`,
+        final_model:     "anthropic/claude-3-haiku",
+        max_output_size: 4000,
+        temperature:     0.1,
+      }),
+    });
+
+    if (!lemurRes.ok) {
+      const errText = await lemurRes.text().catch(() => "");
+      console.warn(`[translateWithLeMUR] LeMUR API error ${lemurRes.status}: ${errText}`);
+      return null;
+    }
+
+    const lemurData = await lemurRes.json() as { response?: string; error?: string };
+    if (lemurData.error || !lemurData.response) {
+      console.warn("[translateWithLeMUR] LeMUR returned error:", lemurData.error ?? "no response field");
+      return null;
+    }
+
+    const jsonMatch = lemurData.response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn("[translateWithLeMUR] Could not find JSON in LeMUR response:", lemurData.response.slice(0, 200));
+      return null;
+    }
+
+    const result = JSON.parse(jsonMatch[0]) as { clips: { id: string; text: string }[] };
+    const map    = new Map(result.clips.map((c) => [c.id, c.text]));
+    return clips.map((c) => ({ ...c, text: map.get(c.id) ?? c.text }));
+  } catch (e) {
+    console.warn("[translateWithLeMUR] threw:", e);
+    return null;
+  }
 }
 
 /**
