@@ -235,22 +235,24 @@ export function ProTimeline({
         </div>
       </div>
 
-      {/* Time ruler */}
+      {/* Time ruler — scrolls with tracks inside overflow container */}
+      <div className="overflow-x-hidden">
       <div
         ref={containerRef}
         className="relative h-5 border-b border-border bg-surface/30 cursor-ew-resize select-none"
+        style={{ width: `${zoom}%`, minWidth: "100%" }}
         onMouseDown={(e) => {
           setScrubbing(true);
           handleScrub(e);
         }}
       >
-        {ticks.map((t) => (
+        {ticks.filter((t) => t > 0).map((t) => (
           <div
             key={t}
             className="absolute top-0 bottom-0 flex items-center"
             style={{ left: `${(t / totalDuration) * 100}%` }}
           >
-            <div className="h-full w-px bg-border" />
+            <div className="h-full w-px bg-border/60" />
             <span className="absolute left-1 top-0.5 text-[8px] text-muted font-mono">
               {Math.round(t)}s
             </span>
@@ -292,8 +294,9 @@ export function ProTimeline({
           style={{ left: `${playheadPercent}%` }}
         />
       </div>
+      </div>{/* /ruler overflow wrapper */}
 
-      {/* Tracks — wrapped in horizontal scroller when zoomed */}
+      {/* Tracks — same horizontal scroller, ruler syncs via identical zoom% width */}
       <div className="overflow-x-auto">
       <div className="relative" style={{ width: `${zoom}%`, minWidth: "100%" }}>
         {/* Playhead line across all tracks */}

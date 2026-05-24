@@ -58,7 +58,7 @@ export const CAPTION_STYLES: CaptionStyle[] = [
   {
     id: "tiktok_bold",
     label: "TikTok Bold",
-    description: "Big chunky text. Stops the scroll.",
+    description: "Big chunky text. Word-by-word pop. Stops the scroll.",
     font_family: "Inter",
     font_size: 52,
     font_weight: 900,
@@ -70,7 +70,8 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     position_y: 60,
     position_x: 50,
     max_width: 90,
-    animation: "pop",
+    animation: "word_pop",
+    word_pop_color: "#FFE600",
     preview_emoji: "🔥",
   },
   {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import { parseCaptionText } from "@/lib/caption-styles";
 import {
   type EmphasisStyle,
@@ -22,6 +22,10 @@ interface VideoPlayerProps {
   /** Global playhead time (seconds) — required for karaoke word highlighting */
   playTime?: number;
   onTimeUpdate?: (globalTime: number) => void;
+  /** If provided, caption overlay becomes draggable and fires this on reposition */
+  onCaptionReposition?: (x: number, y: number) => void;
+  /** If provided, font-size resize handle fires this */
+  onCaptionResize?: (newFontSize: number) => void;
 }
 
 export function VideoPlayer({
@@ -33,10 +37,40 @@ export function VideoPlayer({
   emphasisStyle,
   playTime = 0,
   onTimeUpdate,
+  onCaptionReposition,
+  onCaptionResize,
 }: VideoPlayerProps) {
   const effectiveEmphasis = emphasisStyle || DEFAULT_EMPHASIS_STYLE;
-  const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
+  const videoRefs         = useRef<(HTMLVideoElement | null)[]>([]);
+  const containerRef      = useRef<HTMLDivElement>(null);
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
+
+  // Draggable caption state
+  const dragStart = useRef<{ mouseX: number; mouseY: number; posX: number; posY: number } | null>(null);
+
+  const handleCaptionMouseDown = useCallback((e: React.MouseEvent, posX: number, posY: number) => {
+    if (!onCaptionReposition) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragStart.current = { mouseX: e.clientX, mouseY: e.clientY, posX, posY };
+
+    function onMove(ev: MouseEvent) {
+      if (!dragStart.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const dx = ((ev.clientX - dragStart.current.mouseX) / rect.width)  * 100;
+      const dy = ((ev.clientY - dragStart.current.mouseY) / rect.height) * 100;
+      const nx = Math.max(5, Math.min(95, dragStart.current.posX + dx));
+      const ny = Math.max(5, Math.min(95, dragStart.current.posY + dy));
+      onCaptionReposition?.(nx, ny);
+    }
+    function onUp() {
+      dragStart.current = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [onCaptionReposition]);
 
   // Sync muted state — React's `muted` prop doesn't always update the DOM attribute
   useEffect(() => {
@@ -58,7 +92,7 @@ export function VideoPlayer({
     });
   }, [currentClipIndex, isPlaying]);
 
-  // Restart the clip from 0 whenever it becomes active + apply per-clip playback rate
+  // When currentClipIndex changes → reset to clip start and apply speed
   useEffect(() => {
     const v = videoRefs.current[currentClipIndex];
     if (!v) return;
@@ -68,6 +102,17 @@ export function VideoPlayer({
     if (isPlaying) v.play().catch(() => {});
   }, [currentClipIndex]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // When playTime changes externally (scrubbing) → seek active video to correct position
+  useEffect(() => {
+    const v = videoRefs.current[currentClipIndex];
+    if (!v || isPlaying) return; // only seek while paused; during playback onTimeUpdate drives playTime
+    const clipStart = clips.slice(0, currentClipIndex).reduce((sum, c) => sum + c.duration, 0);
+    const targetTime = Math.max(0, playTime - clipStart);
+    if (Math.abs(v.currentTime - targetTime) > 0.15) {
+      v.currentTime = targetTime;
+    }
+  }, [playTime]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!clips.length) {
     return (
       <div className="absolute inset-0 bg-gradient-to-br from-gold-500/10 to-ember-500/10" />
@@ -75,7 +120,7 @@ export function VideoPlayer({
   }
 
   return (
-    <>
+    <div ref={containerRef} className="absolute inset-0">
       {clips.map((clip, i) => {
         const active = i === currentClipIndex;
         const failed = failedIds.has(clip.id);
@@ -239,7 +284,11 @@ export function VideoPlayer({
         if (animation === "word_pop" && currentCaption.word_timings?.length) {
           const timings = currentCaption.word_timings;
           return (
-            <div key={currentCaption.id} className="absolute pointer-events-none" style={wrapperStyle}>
+            <div key={currentCaption.id}
+              className={cn("absolute", onCaptionReposition ? "pointer-events-auto cursor-move" : "pointer-events-none")}
+              style={wrapperStyle}
+              onMouseDown={onCaptionReposition ? (e) => handleCaptionMouseDown(e, posX, posY) : undefined}
+            >
               <p style={{ ...baseTextStyle, display: "flex", flexWrap: "wrap", gap: "0.2em", justifyContent: "center" }}>
                 {timings.map((wt, idx) => {
                   const active = playTime >= wt.start && playTime < wt.end;
@@ -251,15 +300,10 @@ export function VideoPlayer({
                       style={{
                         display:    "inline-block",
                         color:      active ? wordPopColor : past ? color : `${color}28`,
-                        fontWeight: active ? 900 : past ? fontWeight : fontWeight,
-                        transform:  active ? "scale(1.18) translateY(-2px)" : past ? "scale(1)" : "scale(0.88)",
+                        fontWeight: active ? 900 : fontWeight,
+                        // No transition — instant state change, no animation/pulse
                         opacity:    future ? 0.22 : 1,
-                        transition: "all 0.12s cubic-bezier(0.34, 1.56, 0.64, 1)",
-                        textShadow: active ? `0 0 16px ${wordPopColor}cc, 0 2px 6px rgba(0,0,0,0.9)` : undefined,
-                        // For gradient text, override WebkitTextFillColor per-word
-                        ...(gradFrom && gradTo && active
-                          ? { background: `linear-gradient(${gradAngle}deg, ${wordPopColor}, ${wordPopColor})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }
-                          : {}),
+                        textShadow: active ? `0 2px 8px rgba(0,0,0,0.9)` : undefined,
                         ...strokeStyle,
                       }}
                     >
@@ -290,7 +334,7 @@ export function VideoPlayer({
 
           return (
             // Key on group index so React remounts → re-triggers CSS animation
-            <div key={`burst-${currentCaption.id}-${activeGroupIdx}`} className="absolute pointer-events-none" style={wrapperStyle}>
+            <div key={`burst-${currentCaption.id}-${activeGroupIdx}`} className={cn("absolute", onCaptionReposition ? "pointer-events-auto cursor-move" : "pointer-events-none")} style={wrapperStyle} onMouseDown={onCaptionReposition ? (e) => handleCaptionMouseDown(e, posX, posY) : undefined}>
               <p
                 className="cap-burst"
                 style={{
@@ -325,7 +369,7 @@ export function VideoPlayer({
             playTime >= wt.start && playTime < wt.end ? idx : found, -1
           );
           return (
-            <div key={currentCaption.id} className="absolute pointer-events-none" style={wrapperStyle}>
+            <div key={currentCaption.id} className={cn("absolute", onCaptionReposition ? "pointer-events-auto cursor-move" : "pointer-events-none")} style={wrapperStyle} onMouseDown={onCaptionReposition ? (e) => handleCaptionMouseDown(e, posX, posY) : undefined}>
               <p style={{ ...baseTextStyle, display: "flex", flexWrap: "wrap", gap: "0.25em", justifyContent: "center", color: `${color}55` }}>
                 {timings.map((wt, idx) => {
                   const active = idx === activeIdx;
@@ -335,9 +379,7 @@ export function VideoPlayer({
                       display:    "inline-block",
                       color:      active ? (effectiveEmphasis.color || "#F0A500") : past ? color : `${color}55`,
                       fontWeight: active ? 900 : fontWeight,
-                      transform:  active ? "scale(1.12)" : "scale(1)",
-                      transition: "color 0.08s ease, transform 0.08s ease",
-                      textShadow: active ? `0 0 12px ${effectiveEmphasis.glow_color || "#F0A500"}` : undefined,
+                      // No transition/animation — instant colour switch only
                       ...strokeStyle,
                     }}>
                       {wt.word}
@@ -353,7 +395,7 @@ export function VideoPlayer({
         const segments = parseCaptionText(text);
 
         return (
-          <div key={currentCaption.id} className="absolute pointer-events-none" style={wrapperStyle}>
+          <div key={currentCaption.id} className={cn("absolute", onCaptionReposition ? "pointer-events-auto cursor-move" : "pointer-events-none")} style={wrapperStyle} onMouseDown={onCaptionReposition ? (e) => handleCaptionMouseDown(e, posX, posY) : undefined}>
             <p
               className={
                 animation === "pop"        ? "cap-pop"        :
@@ -366,7 +408,8 @@ export function VideoPlayer({
             >
               {segments.map((seg, i) => (
                 seg.emphasis ? (
-                  <span key={i} className={cn(emphasisAnimationClass(effectiveEmphasis.animation))} style={emphasisToCss(effectiveEmphasis)}>
+                  // No animation class — styling only (color, weight, glow). No pulsing.
+                  <span key={i} style={emphasisToCss(effectiveEmphasis)}>
                     {seg.text}
                   </span>
                 ) : (
@@ -391,9 +434,29 @@ export function VideoPlayer({
               @keyframes capSlideDown { from { transform: translateY(-16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
               @keyframes capType      { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0% 0 0); } }
             `}</style>
+
+            {/* Resize handle — only visible when draggable (edit mode) */}
+            {onCaptionResize && (
+              <div
+                className="absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/70 border border-white/20"
+                onMouseDown={(e) => e.stopPropagation()} // don't start drag
+              >
+                <button
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={() => onCaptionResize(Math.max(16, fontSize - 4))}
+                  className="text-white/70 hover:text-white text-xs leading-none px-0.5"
+                >−</button>
+                <span className="text-[9px] font-mono text-white/60">{fontSize}px</span>
+                <button
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={() => onCaptionResize(Math.min(80, fontSize + 4))}
+                  className="text-white/70 hover:text-white text-xs leading-none px-0.5"
+                >+</button>
+              </div>
+            )}
           </div>
         );
       })()}
-    </>
+    </div>
   );
 }

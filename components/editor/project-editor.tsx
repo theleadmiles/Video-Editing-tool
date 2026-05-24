@@ -1855,6 +1855,16 @@ export function ProjectEditor({ project }: { project: Project }) {
                   emphasisStyle={emphasisStyle}
                   playTime={playTime}
                   onTimeUpdate={(t) => setPlayTime(t)}
+                  onCaptionReposition={(x, y) => {
+                    if (currentCaption) setEditedCaptions((prev) =>
+                      prev.map((c) => c.id === currentCaption.id ? { ...c, position: { x, y } } : c)
+                    );
+                  }}
+                  onCaptionResize={(fs) => {
+                    if (currentCaption) setEditedCaptions((prev) =>
+                      prev.map((c) => c.id === currentCaption.id ? { ...c, font_size: fs } : c)
+                    );
+                  }}
                 />
                 {/* Controls overlay */}
                 <div className="absolute top-3 left-3 z-10">
@@ -1889,7 +1899,7 @@ export function ProjectEditor({ project }: { project: Project }) {
             {project.aspect_ratio === "16:9" && (
               <div className="relative rounded-2xl overflow-hidden border border-border shadow-[0_0_80px_rgba(0,0,0,0.9)]"
                 style={{ width: `${600 * previewZoom}px`, height: `${338 * previewZoom}px` }}>
-                <VideoPlayer clips={brollClips} currentClipIndex={currentClipIndex} currentCaption={currentCaption} isPlaying={isPlaying} isMuted={isMuted} emphasisStyle={emphasisStyle} playTime={playTime} onTimeUpdate={(t) => setPlayTime(t)} />
+                <VideoPlayer clips={brollClips} currentClipIndex={currentClipIndex} currentCaption={currentCaption} isPlaying={isPlaying} isMuted={isMuted} emphasisStyle={emphasisStyle} playTime={playTime} onTimeUpdate={(t) => setPlayTime(t)} onCaptionReposition={(x, y) => { if (currentCaption) setEditedCaptions((prev) => prev.map((c) => c.id === currentCaption.id ? { ...c, position: { x, y } } : c)); }} onCaptionResize={(fs) => { if (currentCaption) setEditedCaptions((prev) => prev.map((c) => c.id === currentCaption.id ? { ...c, font_size: fs } : c)); }} />
                 <div className="absolute inset-0 z-10 flex items-center justify-center">
                   <button onClick={togglePlay} className="flex h-16 w-16 items-center justify-center rounded-full bg-black/40 backdrop-blur border border-white/20 hover:bg-black/60 transition-all">
                     {isPlaying ? <Pause className="h-7 w-7 text-white" /> : <Play className="h-7 w-7 text-white ml-1" />}
@@ -1908,7 +1918,7 @@ export function ProjectEditor({ project }: { project: Project }) {
             {project.aspect_ratio === "1:1" && (
               <div className="relative rounded-2xl overflow-hidden border border-border shadow-[0_0_80px_rgba(0,0,0,0.9)]"
                 style={{ width: `${380 * previewZoom}px`, height: `${380 * previewZoom}px` }}>
-                <VideoPlayer clips={brollClips} currentClipIndex={currentClipIndex} currentCaption={currentCaption} isPlaying={isPlaying} isMuted={isMuted} emphasisStyle={emphasisStyle} playTime={playTime} onTimeUpdate={(t) => setPlayTime(t)} />
+                <VideoPlayer clips={brollClips} currentClipIndex={currentClipIndex} currentCaption={currentCaption} isPlaying={isPlaying} isMuted={isMuted} emphasisStyle={emphasisStyle} playTime={playTime} onTimeUpdate={(t) => setPlayTime(t)} onCaptionReposition={(x, y) => { if (currentCaption) setEditedCaptions((prev) => prev.map((c) => c.id === currentCaption.id ? { ...c, position: { x, y } } : c)); }} onCaptionResize={(fs) => { if (currentCaption) setEditedCaptions((prev) => prev.map((c) => c.id === currentCaption.id ? { ...c, font_size: fs } : c)); }} />
                 <div className="absolute inset-0 z-10 flex items-center justify-center">
                   <button onClick={togglePlay} className="flex h-14 w-14 items-center justify-center rounded-full bg-black/40 backdrop-blur border border-white/20 hover:bg-black/60 transition-all">
                     {isPlaying ? <Pause className="h-6 w-6 text-white" /> : <Play className="h-6 w-6 text-white ml-1" />}
@@ -1982,6 +1992,75 @@ export function ProjectEditor({ project }: { project: Project }) {
                   Save
                 </Button>
               </div>
+
+              {/* Quick style controls — font size + colour applied to ALL captions */}
+              {editedCaptions.length > 0 && (
+                <div className="rounded-xl border border-border bg-elevated/60 p-3 space-y-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Style all captions</p>
+                  {/* Font size */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] text-muted">Size</span>
+                      <span className="font-mono text-[10px] text-white">{editedCaptions[0]?.font_size ?? 36}px</span>
+                    </div>
+                    <input
+                      type="range" min={16} max={80} step={2}
+                      value={editedCaptions[0]?.font_size ?? 36}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setEditedCaptions((prev) => prev.map((c) => ({ ...c, font_size: v })));
+                      }}
+                      className="w-full accent-gold-500 h-1 rounded-full"
+                    />
+                  </div>
+                  {/* Font weight */}
+                  <div>
+                    <span className="text-[10px] text-muted block mb-1">Weight</span>
+                    <div className="grid grid-cols-4 gap-1">
+                      {([300, 500, 700, 900] as const).map((w) => (
+                        <button key={w}
+                          onClick={() => setEditedCaptions((prev) => prev.map((c) => ({ ...c, font_weight: w })))}
+                          style={{ fontWeight: w }}
+                          className={cn("rounded border py-1 text-[9px] transition-all",
+                            (editedCaptions[0]?.font_weight ?? 600) === w
+                              ? "border-gold-500/60 bg-gold-500/10 text-gold-400"
+                              : "border-border bg-surface text-muted hover:text-white"
+                          )}>
+                          {w === 300 ? "L" : w === 500 ? "M" : w === 700 ? "B" : "X"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Text colour */}
+                  <div>
+                    <span className="text-[10px] text-muted block mb-1.5">Colour</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {["#FFFFFF","#F0A500","#FFE600","#FF4D4D","#60A5FA","#34D399","#000000"].map((hex) => (
+                        <button key={hex}
+                          onClick={() => setEditedCaptions((prev) => prev.map((c) => ({ ...c, color: hex })))}
+                          className={cn("h-6 w-6 rounded border-2 transition-all hover:scale-110",
+                            (editedCaptions[0]?.color ?? "#FFFFFF") === hex
+                              ? "border-white ring-1 ring-white/30 scale-110"
+                              : "border-border/40"
+                          )}
+                          style={{ backgroundColor: hex }}
+                        />
+                      ))}
+                      <label className="flex h-6 w-6 items-center justify-center rounded border-2 border-dashed border-border cursor-pointer hover:border-gold-500/50 overflow-hidden">
+                        <input type="color"
+                          value={editedCaptions[0]?.color ?? "#FFFFFF"}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setEditedCaptions((prev) => prev.map((c) => ({ ...c, color: v })));
+                          }}
+                          className="sr-only"
+                        />
+                        <span className="text-[9px] text-muted">+</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Template picker */}
               <div>

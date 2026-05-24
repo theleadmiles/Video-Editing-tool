@@ -94,8 +94,8 @@ export function CaptionTemplatePicker({ selectedId, onSelect, activeStyle, compa
             )}
           >
             <CaptionMiniPreview style={s} compact={compact} />
-            <div className={cn("px-2 py-1.5 bg-surface border-t border-border", compact && "px-1.5 py-1")}>
-              <p className={cn("font-semibold text-white truncate", compact ? "text-[10px]" : "text-xs")}>
+            <div className={cn("px-2 py-1.5 bg-surface border-t border-border", compact && "px-1 py-0.5")}>
+              <p className={cn("font-semibold text-white truncate", compact ? "text-[9px]" : "text-xs")}>
                 {s.label}
               </p>
               {!compact && (
@@ -246,13 +246,13 @@ export function CaptionTemplatePicker({ selectedId, onSelect, activeStyle, compa
 }
 
 function CaptionMiniPreview({ style, compact }: { style: CaptionStyle; compact: boolean }) {
-  const sampleText = "BOLTCUT";
+  const sampleText = "Aa";
 
   return (
     <div
       className={cn(
         "relative w-full bg-gradient-to-br flex items-center justify-center",
-        compact ? "h-14" : "h-20",
+        compact ? "h-9" : "h-16",
         style.id === "tiktok_bold"  ? "from-pink-500/30 to-purple-500/30" :
         style.id === "news_ticker"  ? "from-blue-500/30 to-cyan-500/30"   :
         style.id === "cinematic"    ? "from-gray-700/40 to-gray-900/40"   :

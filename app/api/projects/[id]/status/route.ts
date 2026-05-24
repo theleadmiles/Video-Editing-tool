@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { openrouter, OR_MODEL } from "@/lib/ai/openrouter";
 
 const MAX_WORDS_PER_CHUNK = 5;
 const SILENCE_THRESHOLD = 0.4; // seconds — force chunk break on gap >= this
@@ -38,6 +39,7 @@ export async function GET(
       videoUrl:      string;
       aspectRatio:   string;
       workspaceId:   string;
+      languageName?: string; // e.g. "English", "Hindi", undefined = auto-detect
     };
     error?: string;
   } | null;
@@ -47,7 +49,7 @@ export async function GET(
     if (apiKey) {
       try {
         const aRes = await fetch(
-          `https://api.assemblyai.com/v2/transcript/${td._pending.assemblyai_id}`,
+          `https://api.assemblyai.com/v2/transcript/${td._pending!.assemblyai_id}`,
           { headers: { "Authorization": apiKey } },
         );
 
@@ -76,9 +78,25 @@ export async function GET(
             const totalDuration = aData.duration ?? (words.length > 0 ? words[words.length - 1].end : 30);
 
             // Build sentiment lookup: utterance start → emotion tag
-            const sentimentMap = buildSentimentMap(aData.sentiment_analysis_results ?? []);
-            const captions     = buildCaptionClips(words, aData.text ?? "", totalDuration, sentimentMap);
-            const { videoUrl, aspectRatio, workspaceId } = td._pending;
+            const sentimentMap  = buildSentimentMap(aData.sentiment_analysis_results ?? []);
+            let captions        = buildCaptionClips(words, aData.text ?? "", totalDuration, sentimentMap);
+            const { videoUrl, aspectRatio, workspaceId, languageName } = td!._pending!;
+
+            // ── Auto-translate to English when:
+            //    • User selected "English" as the language, OR
+            //    • Auto-detect was used (languageName undefined/null)
+            //   AND AssemblyAI returned a non-English language code.
+            const detectedLang   = (aData as { language_code?: string }).language_code ?? "en";
+            const wantedEnglish  = !languageName || languageName === "English";
+            const isNonEnglish   = detectedLang !== "en";
+            if (wantedEnglish && isNonEnglish) {
+              try {
+                const translated = await translateClipsToEnglish(captions);
+                if (translated) captions = translated;
+              } catch (e) {
+                console.warn("[status] auto-translate failed — keeping original text:", e);
+              }
+            }
 
             const timeline = {
               tracks: [
@@ -247,4 +265,44 @@ function buildCaptionClips(
   flush(); // remaining words
 
   return result;
+}
+
+/**
+ * Translate all clip texts to English using Claude via OpenRouter.
+ * Timings and IDs are preserved — only the `text` field changes.
+ * Returns null on failure (caller falls back to original).
+ */
+async function translateClipsToEnglish<T extends { id: string; text: string }>(
+  clips: T[]
+): Promise<T[] | null> {
+  const payload = clips.map((c) => ({ id: c.id, text: c.text }));
+
+  const completion = await openrouter.chat.completions.create({
+    model:       OR_MODEL,
+    max_tokens:  3000,
+    temperature: 0.1,
+    messages: [
+      {
+        role: "system",
+        content: `You are a subtitle translator. Translate the given captions to natural English.
+Rules:
+- Each clip is a short spoken phrase (1-5 words typically)
+- Translate faithfully — do not paraphrase or summarise
+- Keep translated text approximately the same length as the original
+- Return ONLY valid JSON — no prose, no code fences`,
+      },
+      {
+        role: "user",
+        content: `Translate each caption to English:\n${JSON.stringify(payload, null, 2)}\n\nReturn: {"clips":[{"id":"...","text":"..."}]}`,
+      },
+    ],
+  });
+
+  const raw   = completion.choices[0]?.message?.content ?? "";
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+
+  const result = JSON.parse(match[0]) as { clips: { id: string; text: string }[] };
+  const map    = new Map(result.clips.map((c) => [c.id, c.text]));
+  return clips.map((c) => ({ ...c, text: map.get(c.id) ?? c.text }));
 }

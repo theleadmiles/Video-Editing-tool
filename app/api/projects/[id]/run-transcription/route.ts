@@ -86,7 +86,7 @@ export async function POST(
     // Store job details in timeline_data so the status poller can pick it up
     await admin.from("projects").update({
       timeline_data: {
-        _pending: { assemblyai_id, videoUrl, aspectRatio, workspaceId },
+        _pending: { assemblyai_id, videoUrl, aspectRatio, workspaceId, languageName },
       },
     }).eq("id", projectId);
 
