@@ -93,6 +93,7 @@ Return this exact JSON:
     return NextResponse.json({ clips: corrected });
   } catch (err) {
     console.error("[captions/correct] error:", err);
-    return NextResponse.json({ error: "Correction failed" }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg || "Correction failed" }, { status: 500 });
   }
 }

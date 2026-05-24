@@ -100,6 +100,7 @@ Rules:
     });
   } catch (err) {
     console.error("[captions/hook] error:", err);
-    return NextResponse.json({ error: "Hook detection failed" }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg || "Hook detection failed" }, { status: 500 });
   }
 }

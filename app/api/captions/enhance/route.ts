@@ -113,7 +113,9 @@ Return this exact JSON structure:
     return NextResponse.json({ clips: enhanced });
   } catch (err) {
     console.error("[captions/enhance] error:", err);
-    return NextResponse.json({ error: "AI enhancement failed" }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    // Surface the real OpenRouter error (credits, key invalid, model unavailable, etc.)
+    return NextResponse.json({ error: msg || "AI enhancement failed" }, { status: 500 });
   }
 }
 
