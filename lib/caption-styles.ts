@@ -23,9 +23,17 @@ export interface CaptionStyle {
   position_x: number;  // % from left (0–100), centered horizontally
   max_width?: number;  // % of frame width
   // Animation
-  animation: "fade" | "pop" | "slide_up" | "slide_down" | "type" | "karaoke" | "none";
+  animation: "fade" | "pop" | "slide_up" | "slide_down" | "type" | "karaoke" | "word_pop" | "word_burst" | "none";
   // Emoji enhancement
   auto_emoji?: boolean;
+  // word_pop accent colour (the "active word" highlight)
+  word_pop_color?: string;
+  // words per group in word_burst mode (default 2)
+  word_burst_size?: number;
+  // Gradient text fill
+  gradient_from?: string;
+  gradient_to?: string;
+  gradient_angle?: number;
   // Demo emoji for preview thumbnail
   preview_emoji: string;
 }
@@ -162,6 +170,61 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     animation: "karaoke",
     preview_emoji: "🎤",
   },
+  {
+    id: "word_pop",
+    label: "Word Pop",
+    description: "Each word punches in individually. MrBeast style.",
+    font_family: "Inter",
+    font_size: 54,
+    font_weight: 900,
+    color: "#FFFFFF",
+    stroke_color: "#000000",
+    stroke_width: 8,
+    text_transform: "uppercase",
+    position_y: 60,
+    position_x: 50,
+    max_width: 88,
+    animation: "word_pop",
+    word_pop_color: "#FFE600",
+    preview_emoji: "💥",
+  },
+  {
+    id: "word_burst",
+    label: "Word Burst",
+    description: "2-word groups explode in and out. Ultra-aggressive.",
+    font_family: "Inter",
+    font_size: 62,
+    font_weight: 900,
+    color: "#FFFFFF",
+    stroke_color: "#000000",
+    stroke_width: 6,
+    text_transform: "uppercase",
+    position_y: 55,
+    position_x: 50,
+    max_width: 90,
+    animation: "word_burst",
+    word_burst_size: 2,
+    word_pop_color: "#F0A500",
+    preview_emoji: "⚡",
+  },
+  {
+    id: "gradient_glow",
+    label: "Gradient Glow",
+    description: "Animated gold-to-ember gradient. Premium feel.",
+    font_family: "Inter",
+    font_size: 46,
+    font_weight: 800,
+    color: "#F0A500",
+    stroke_width: 0,
+    gradient_from: "#FFE600",
+    gradient_to: "#FF6B00",
+    gradient_angle: 135,
+    position_y: 72,
+    position_x: 50,
+    max_width: 80,
+    animation: "pop",
+    preview_emoji: "🌟",
+  },
 ];
 
 export function findStyle(id: string | undefined | null): CaptionStyle {
@@ -180,22 +243,29 @@ export function applyStyleToClip<T extends {
   text_transform?: "uppercase" | "lowercase" | "none";
   letter_spacing?: number; stroke_color?: string; stroke_width?: number;
   background_css?: string; bg_padding?: string; max_width_pct?: number;
+  word_pop_color?: string; word_burst_size?: number;
+  gradient_from?: string; gradient_to?: string; gradient_angle?: number;
 }>(clip: T, style: CaptionStyle): T {
   return {
     ...clip,
-    color:          style.color,
-    font_size:      style.font_size,
-    font_family:    style.font_family,
-    font_weight:    style.font_weight,
-    animation:      style.animation,
-    position:       { x: style.position_x, y: style.position_y },
-    text_transform: style.text_transform ?? "none",
-    letter_spacing: style.letter_spacing ?? 0,
-    stroke_color:   style.stroke_color,
-    stroke_width:   style.stroke_width,
-    background_css: style.background,
-    bg_padding:     style.padding,
-    max_width_pct:  style.max_width,
+    color:           style.color,
+    font_size:       style.font_size,
+    font_family:     style.font_family,
+    font_weight:     style.font_weight,
+    animation:       style.animation,
+    position:        { x: style.position_x, y: style.position_y },
+    text_transform:  style.text_transform ?? "none",
+    letter_spacing:  style.letter_spacing ?? 0,
+    stroke_color:    style.stroke_color,
+    stroke_width:    style.stroke_width,
+    background_css:  style.background,
+    bg_padding:      style.padding,
+    max_width_pct:   style.max_width,
+    word_pop_color:  style.word_pop_color,
+    word_burst_size: style.word_burst_size,
+    gradient_from:   style.gradient_from,
+    gradient_to:     style.gradient_to,
+    gradient_angle:  style.gradient_angle,
   };
 }
 

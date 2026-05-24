@@ -51,6 +51,9 @@ export interface TimelineTrack {
   clips: TimelineClip[];
 }
 
+/** Emotion detected per caption chunk by AI analysis */
+export type CaptionEmotion = "neutral" | "excited" | "calm" | "urgent" | "funny";
+
 export interface TimelineClip {
   id: string;
   asset_id?: string;
@@ -77,6 +80,17 @@ export interface TimelineClip {
   bg_padding?: string;             // CSS padding, e.g. "4px 10px"
   max_width_pct?: number;          // max-width as % of frame (0–100)
   word_timings?: { word: string; start: number; end: number }[];
+  // Word-pop / word-burst accent colour (overrides emphasis for these modes)
+  word_pop_color?: string;         // e.g. "#FFE600"
+  word_burst_size?: number;        // words per burst group (default 2)
+  // Gradient text fill
+  gradient_from?: string;          // e.g. "#FF4D4D"
+  gradient_to?: string;            // e.g. "#F0A500"
+  gradient_angle?: number;         // 0–360 deg
+  // AI-derived metadata
+  emotion?: CaptionEmotion;        // set by /api/captions/enhance
+  speaker?: string;                // "A" | "B" | ... (AssemblyAI diarization)
+  speaker_color?: string;          // hex colour assigned per speaker
   // Audio specific
   volume?: number;
   // Playback

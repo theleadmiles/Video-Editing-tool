@@ -20,6 +20,7 @@ import { CaptionTemplatePicker } from "./caption-template-picker";
 import { CaptionFindReplace } from "./caption-find-replace";
 import { CaptionInspector } from "./caption-inspector";
 import { EmphasisStyleEditor } from "./emphasis-style-editor";
+import { CaptionAIPanel } from "./caption-ai-panel";
 import { ClipEffectsPanel } from "./clip-effects-panel";
 import { ContextMenu, type ContextMenuItem } from "@/components/ui/context-menu";
 import { CAPTION_STYLES, findStyle, applyStyleToClip } from "@/lib/caption-styles";
@@ -2045,33 +2046,17 @@ export function ProjectEditor({ project }: { project: Project }) {
                 )}
               </div>
 
-              {/* AI Translate */}
+              {/* AI Caption Tools — full intelligence panel */}
               {editedCaptions.length > 0 && (
-                <details className="border-t border-border pt-3 group">
-                  <summary className="flex items-center gap-1.5 cursor-pointer text-[10px] font-semibold uppercase tracking-wider text-gold-500 hover:text-gold-400 transition-all list-none">
-                    <Sparkles className="h-3 w-3" />
-                    AI Translate
-                    {translating && <Loader2 className="h-3 w-3 animate-spin ml-auto" />}
-                    <ChevronRight className="h-3 w-3 ml-auto group-open:rotate-90 transition-transform" />
-                  </summary>
-                  <div className="mt-2">
-                    <div className="grid grid-cols-3 gap-1">
-                      {["Hindi", "Tamil", "Telugu", "Bengali", "Kannada", "Marathi", "Punjabi", "Malayalam", "Gujarati"].map((lang) => (
-                        <button
-                          key={lang}
-                          onClick={() => translateCaptions(lang)}
-                          disabled={!!translating}
-                          className="rounded-md border border-border bg-elevated/30 px-1.5 py-1 text-[10px] text-subtle hover:text-white hover:border-gold-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                        >
-                          {lang}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="mt-1.5 text-[9px] text-muted">
-                      {editedCaptions.length} caption{editedCaptions.length !== 1 ? "s" : ""} · translates in native script
-                    </p>
-                  </div>
-                </details>
+                <div className="border-t border-border pt-3">
+                  <CaptionAIPanel
+                    captions={editedCaptions}
+                    onUpdate={(updated) => {
+                      setEditedCaptions(updated);
+                      toast.success("Captions updated — click Save to keep changes");
+                    }}
+                  />
+                </div>
               )}
             </div>
           ) : (

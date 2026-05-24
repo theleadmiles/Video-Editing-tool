@@ -56,16 +56,28 @@ export async function GET(
             status:    string;
             text:      string;
             duration?: number;
-            words?:    { text: string; start: number; end: number }[];
+            words?:    { text: string; start: number; end: number; speaker?: string }[];
+            sentiment_analysis_results?: {
+              text: string; start: number; end: number;
+              sentiment: "POSITIVE" | "NEUTRAL" | "NEGATIVE";
+            }[];
           };
 
           const admin = adminClient();
 
           if (aData.status === "completed") {
             // Build captions from word-level timestamps (in milliseconds → convert to seconds)
-            const words         = (aData.words ?? []).map(w => ({ ...w, start: w.start / 1000, end: w.end / 1000 }));
+            const words = (aData.words ?? []).map(w => ({
+              ...w,
+              start:   w.start   / 1000,
+              end:     w.end     / 1000,
+              speaker: w.speaker ?? undefined,
+            }));
             const totalDuration = aData.duration ?? (words.length > 0 ? words[words.length - 1].end : 30);
-            const captions      = buildCaptionClips(words, aData.text ?? "", totalDuration);
+
+            // Build sentiment lookup: utterance start → emotion tag
+            const sentimentMap = buildSentimentMap(aData.sentiment_analysis_results ?? []);
+            const captions     = buildCaptionClips(words, aData.text ?? "", totalDuration, sentimentMap);
             const { videoUrl, aspectRatio, workspaceId } = td._pending;
 
             const timeline = {
@@ -137,53 +149,89 @@ export async function GET(
  * Duration is the exact word span (last_word.end − first_word.start), not padded
  * into silence. This prevents cross-sentence bleed.
  */
+// One colour per speaker label (A–F). Repeats if more than 6 speakers.
+const SPEAKER_COLORS: Record<string, string> = {
+  A: "#FFFFFF", B: "#60A5FA", C: "#34D399", D: "#F87171", E: "#FBBF24", F: "#A78BFA",
+};
+
+type SentimentResult = { text: string; start: number; end: number; sentiment: string };
+type EmotionTag = "neutral" | "excited" | "calm" | "urgent" | "funny";
+
+/** Map each sentence start-ms → emotion tag */
+function buildSentimentMap(results: SentimentResult[]): Map<number, EmotionTag> {
+  const map = new Map<number, EmotionTag>();
+  for (const r of results) {
+    const emotion: EmotionTag =
+      r.sentiment === "POSITIVE" ? "excited" :
+      r.sentiment === "NEGATIVE" ? "urgent"  :
+      "neutral";
+    map.set(r.start, emotion);
+  }
+  return map;
+}
+
 function buildCaptionClips(
-  words: { text: string; start: number; end: number }[],
+  words: { text: string; start: number; end: number; speaker?: string }[],
   fallbackText: string,
   totalDuration: number,
+  sentimentMap: Map<number, EmotionTag> = new Map(),
 ) {
   if (!words.length) {
     return [{
-      id:          crypto.randomUUID(),
-      text:        fallbackText,
-      start_time:  0,
-      duration:    totalDuration,
-      animation:   "fade" as const,
-      color:       "#FFFFFF",
-      font_size:   36,
-      font_weight: 600,
-      font_family: "Inter",
-      position:    { x: 50, y: 80 },
+      id:           crypto.randomUUID(),
+      text:         fallbackText,
+      start_time:   0,
+      duration:     totalDuration,
+      animation:    "fade" as const,
+      color:        "#FFFFFF",
+      font_size:    36,
+      font_weight:  600,
+      font_family:  "Inter",
+      position:     { x: 50, y: 80 },
       word_timings: [] as { word: string; start: number; end: number }[],
+      emotion:      "neutral" as EmotionTag,
     }];
   }
 
-  type WordEntry = { text: string; start: number; end: number };
+  type WordEntry = { text: string; start: number; end: number; speaker?: string };
   type CaptionClip = {
     id: string; text: string; start_time: number; duration: number;
     animation: "fade"; color: string; font_size: number; font_weight: number;
     font_family: string; position: { x: number; y: number };
     word_timings: { word: string; start: number; end: number }[];
+    speaker?: string; speaker_color?: string; emotion?: EmotionTag;
   };
   const result: CaptionClip[] = [];
   let bucket: WordEntry[] = [];
 
   const flush = () => {
     if (!bucket.length) return;
-    const first = bucket[0];
-    const last  = bucket[bucket.length - 1];
+    const first   = bucket[0];
+    const last    = bucket[bucket.length - 1];
+    const speaker = first.speaker;
+    // Closest sentiment sentence (within 2s of chunk start, in ms for the map)
+    const startMs  = Math.round(first.start * 1000);
+    const emotion  = sentimentMap.get(startMs)
+      ?? [...sentimentMap.entries()]
+           .filter(([ms]) => ms <= startMs && startMs - ms < 2000)
+           .sort(([a], [b]) => b - a)[0]?.[1]
+      ?? "neutral";
+
     result.push({
-      id:          crypto.randomUUID(),
-      text:        bucket.map((w) => w.text).join(" ").trim(),
-      start_time:  first.start,
-      duration:    Math.max(last.end - first.start, 0.25),
-      animation:   "fade" as const,
-      color:       "#FFFFFF",
-      font_size:   36,
-      font_weight: 600,
-      font_family: "Inter",
-      position:    { x: 50, y: 80 },
-      word_timings: bucket.map((w) => ({ word: w.text, start: w.start, end: w.end })),
+      id:            crypto.randomUUID(),
+      text:          bucket.map((w) => w.text).join(" ").trim(),
+      start_time:    first.start,
+      duration:      Math.max(last.end - first.start, 0.25),
+      animation:     "fade" as const,
+      color:         speaker ? (SPEAKER_COLORS[speaker] ?? "#FFFFFF") : "#FFFFFF",
+      font_size:     36,
+      font_weight:   600,
+      font_family:   "Inter",
+      position:      { x: 50, y: 80 },
+      word_timings:  bucket.map((w) => ({ word: w.text, start: w.start, end: w.end })),
+      speaker,
+      speaker_color: speaker ? (SPEAKER_COLORS[speaker] ?? "#FFFFFF") : undefined,
+      emotion,
     });
     bucket = [];
   };
