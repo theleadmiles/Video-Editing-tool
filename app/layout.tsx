@@ -1,15 +1,20 @@
 import type { Metadata } from "next";
-import { Inter, Geist_Mono } from "next/font/google";
+import {
+  Inter,
+  Geist_Mono,
+  Montserrat,
+  Oswald,
+  Bebas_Neue,
+  Space_Grotesk,
+} from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/toast";
 
-// Two fonts instead of three — Inter covers all UI text, Geist Mono for code.
-// Dropping Geist Sans removes one network round-trip (~20–35 KB) on first load.
+// UI font — Inter covers all UI chrome
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
   display: "swap",
-  // Only load the weights we actually use
   weight: ["400", "500", "600", "700"],
 });
 
@@ -17,6 +22,42 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-geist-mono",
   display: "swap",
+});
+
+// ── Caption / display fonts ─────────────────────────────────────────────────
+// Loaded with display:swap so they don't block render.
+// Each is available as a CSS variable for caption styling.
+
+/** Clean modern bold — great for talking-head captions */
+const montserrat = Montserrat({
+  subsets: ["latin"],
+  variable: "--font-montserrat",
+  display: "swap",
+  weight: ["400", "700", "900"],
+});
+
+/** Tall condensed — very legible on portrait video */
+const oswald = Oswald({
+  subsets: ["latin"],
+  variable: "--font-oswald",
+  display: "swap",
+  weight: ["400", "600", "700"],
+});
+
+/** Ultra-condensed all-caps — high-impact YouTube/TikTok style */
+const bebasNeue = Bebas_Neue({
+  subsets: ["latin"],
+  variable: "--font-bebas-neue",
+  display: "swap",
+  weight: "400",
+});
+
+/** Geometric grotesque — modern, great for brand content */
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-space-grotesk",
+  display: "swap",
+  weight: ["400", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -63,7 +104,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${inter.variable} ${geistMono.variable} bg-base text-white antialiased`}
+        className={`${inter.variable} ${geistMono.variable} ${montserrat.variable} ${oswald.variable} ${bebasNeue.variable} ${spaceGrotesk.variable} bg-base text-white antialiased`}
       >
         {/* Skip to content — visible only on keyboard focus */}
         <a

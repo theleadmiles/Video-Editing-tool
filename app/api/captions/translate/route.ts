@@ -14,6 +14,13 @@ import type { TimelineClip } from "@/types";
  * Returns: { clips: TimelineClip[] }
  */
 export async function POST(req: NextRequest) {
+  if (!process.env.OPENROUTER_API_KEY) {
+    return NextResponse.json(
+      { error: "OpenRouter API key not configured. Add OPENROUTER_API_KEY to .env.local and restart the dev server." },
+      { status: 503 }
+    );
+  }
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

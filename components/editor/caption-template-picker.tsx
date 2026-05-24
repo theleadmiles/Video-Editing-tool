@@ -246,12 +246,24 @@ export function CaptionTemplatePicker({ selectedId, onSelect, activeStyle, compa
 }
 
 function CaptionMiniPreview({ style, compact }: { style: CaptionStyle; compact: boolean }) {
-  const sampleText = "Aa";
+  const isBold = style.font_weight && style.font_weight >= 700;
+  const sampleText = isBold ? "Bold text" : "Hello world";
+
+  // Pick animation class name based on style.animation
+  const animClass =
+    style.animation === "pop"       ? `preview-anim-pop-${style.id}`       :
+    style.animation === "karaoke"   ? `preview-anim-karaoke-${style.id}`   :
+    style.animation === "word_pop"  ? `preview-anim-wordpop-${style.id}`   :
+    style.animation === "slide_up"  ? `preview-anim-slideup-${style.id}`   :
+    style.animation === "fade"      ? `preview-anim-fade-${style.id}`      :
+    "";
+
+  const safeId = style.id.replace(/[^a-z0-9_-]/gi, "_");
 
   return (
     <div
       className={cn(
-        "relative w-full bg-gradient-to-br flex items-center justify-center",
+        "relative w-full bg-gradient-to-br flex items-center justify-center overflow-hidden",
         compact ? "h-9" : "h-16",
         style.id === "tiktok_bold"  ? "from-pink-500/30 to-purple-500/30" :
         style.id === "news_ticker"  ? "from-blue-500/30 to-cyan-500/30"   :
@@ -263,30 +275,146 @@ function CaptionMiniPreview({ style, compact }: { style: CaptionStyle; compact: 
         "from-gold-500/10 to-ember-500/10"
       )}
     >
-      <span
-        style={{
-          fontFamily:      style.font_family,
-          fontWeight:      style.font_weight,
-          color:           style.color,
-          fontSize:        compact ? Math.min(style.font_size / 3.2, 14) : Math.min(style.font_size / 2.8, 18),
-          textShadow:      style.stroke_color
-            ? `0 0 ${(style.stroke_width || 4) / 2}px ${style.stroke_color}, 0 0 ${(style.stroke_width || 4)}px ${style.stroke_color}`
-            : undefined,
-          background:      style.background,
-          padding:         style.background ? "2px 6px" : undefined,
-          borderRadius:    style.background ? 3 : undefined,
-          textTransform:   style.text_transform,
-          letterSpacing:   style.letter_spacing,
-        }}
-      >
-        {sampleText}
-      </span>
-      {style.animation === "karaoke" && (
-        <div className="absolute bottom-0.5 right-1 text-[7px] text-gold-400 font-bold">KARAOKE</div>
-      )}
+      {/* Keyframe animations injected per-style */}
       {style.animation === "pop" && (
-        <div className="absolute bottom-0.5 right-1 text-[7px] text-ember-400 font-bold">POP</div>
+        <style jsx>{`
+          @keyframes preview-pop-${safeId} {
+            0%, 100% { transform: scale(1); }
+            30% { transform: scale(0.9); }
+            60% { transform: scale(1.05); }
+            80% { transform: scale(1); }
+          }
+          .${animClass} { animation: preview-pop-${safeId} 2s ease-in-out infinite; }
+        `}</style>
+      )}
+      {style.animation === "slide_up" && (
+        <style jsx>{`
+          @keyframes preview-slideup-${safeId} {
+            0% { transform: translateY(12px); opacity: 0; }
+            25% { transform: translateY(0); opacity: 1; }
+            75% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(-4px); opacity: 0; }
+          }
+          .${animClass} { animation: preview-slideup-${safeId} 2s ease-in-out infinite; }
+        `}</style>
+      )}
+      {style.animation === "fade" && (
+        <style jsx>{`
+          @keyframes preview-fade-${safeId} {
+            0%, 100% { opacity: 0.2; }
+            40%, 60% { opacity: 1; }
+          }
+          .${animClass} { animation: preview-fade-${safeId} 2s ease-in-out infinite; }
+        `}</style>
+      )}
+
+      {style.animation === "karaoke" ? (
+        // Karaoke: cycle through 3 "highlighted" word states
+        <KaraokePreview style={style} compact={compact} animClass={animClass} safeId={safeId} />
+      ) : style.animation === "word_pop" ? (
+        // Word-pop: pulse colour
+        <WordPopPreview style={style} compact={compact} safeId={safeId} />
+      ) : (
+        <span
+          className={animClass}
+          style={{
+            fontFamily:    style.font_family,
+            fontWeight:    style.font_weight,
+            color:         style.color,
+            fontSize:      compact ? Math.min(style.font_size / 3.2, 14) : Math.min(style.font_size / 2.8, 18),
+            textShadow:    style.stroke_color
+              ? `0 0 ${(style.stroke_width || 4) / 2}px ${style.stroke_color}, 0 0 ${(style.stroke_width || 4)}px ${style.stroke_color}`
+              : undefined,
+            background:    style.background,
+            padding:       style.background ? "2px 6px" : undefined,
+            borderRadius:  style.background ? 3 : undefined,
+            textTransform: style.text_transform,
+            letterSpacing: style.letter_spacing ? `${style.letter_spacing}em` : undefined,
+          }}
+        >
+          {sampleText}
+        </span>
       )}
     </div>
+  );
+}
+
+function KaraokePreview({
+  style,
+  compact,
+  safeId,
+}: {
+  style: CaptionStyle;
+  compact: boolean;
+  animClass: string;
+  safeId: string;
+}) {
+  const words = ["Hello", "world", "!"];
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setActiveIdx((v) => (v + 1) % words.length), 650);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const fs = compact ? Math.min(style.font_size / 3.2, 14) : Math.min(style.font_size / 2.8, 18);
+
+  return (
+    <>
+      <style jsx>{`
+        @keyframes karaoke-word-${safeId} {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+        }
+      `}</style>
+      <span style={{ fontSize: fs, fontFamily: style.font_family, fontWeight: style.font_weight, letterSpacing: style.letter_spacing ? `${style.letter_spacing}em` : undefined }}>
+        {words.map((w, i) => (
+          <span
+            key={i}
+            style={{
+              color: i === activeIdx ? (style.word_pop_color || "#FFE600") : (style.color || "#fff"),
+              animation: i === activeIdx ? `karaoke-word-${safeId} 0.3s ease-in-out` : undefined,
+              display: "inline-block",
+              marginRight: "2px",
+            }}
+          >
+            {w}
+          </span>
+        ))}
+      </span>
+    </>
+  );
+}
+
+function WordPopPreview({
+  style,
+  compact,
+  safeId,
+}: {
+  style: CaptionStyle;
+  compact: boolean;
+  safeId: string;
+}) {
+  const fs = compact ? Math.min(style.font_size / 3.2, 14) : Math.min(style.font_size / 2.8, 18);
+  const accentColor = style.word_pop_color || "#FFE600";
+
+  return (
+    <>
+      <style jsx>{`
+        @keyframes wordpop-${safeId} {
+          0%, 100% { color: ${style.color || "#fff"}; }
+          50% { color: ${accentColor}; }
+        }
+        .wordpop-span-${safeId} {
+          animation: wordpop-${safeId} 1.5s ease-in-out infinite;
+          font-family: ${style.font_family || "inherit"};
+          font-weight: ${style.font_weight || 600};
+          font-size: ${fs}px;
+          text-transform: ${style.text_transform || "none"};
+        }
+      `}</style>
+      <span className={`wordpop-span-${safeId}`}>Hello world</span>
+    </>
   );
 }

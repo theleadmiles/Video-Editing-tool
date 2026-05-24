@@ -12,9 +12,11 @@ interface Props {
 }
 
 const FONTS = [
-  { value: "Inter", label: "Inter" },
-  { value: "Geist Sans", label: "Geist" },
-  { value: "Geist Mono", label: "Mono" },
+  { value: "Inter",         label: "Inter",         hint: "Clean & readable",  cssVar: "var(--font-inter)"         },
+  { value: "Montserrat",    label: "Montserrat",    hint: "Modern bold",       cssVar: "var(--font-montserrat)"    },
+  { value: "Oswald",        label: "Oswald",        hint: "Tall condensed",    cssVar: "var(--font-oswald)"        },
+  { value: "Bebas Neue",    label: "Bebas Neue",    hint: "High impact",       cssVar: "var(--font-bebas-neue)"    },
+  { value: "Space Grotesk", label: "Space Grotesk", hint: "Geometric brand",   cssVar: "var(--font-space-grotesk)" },
 ];
 
 const ANIMATIONS = [
@@ -170,20 +172,25 @@ export function CaptionInspector({ caption, onChange, onClose }: Props) {
             {/* Font */}
             <div>
               <SectionLabel>Font</SectionLabel>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 gap-1.5">
                 {FONTS.map((f) => (
                   <button
                     key={f.value}
                     onClick={() => onChange({ font_family: f.value })}
-                    style={{ fontFamily: f.value }}
                     className={cn(
-                      "rounded-lg border py-2 text-xs font-medium transition-all",
+                      "flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-all",
                       currentFont === f.value
-                        ? "border-gold-500/60 bg-gold-500/10 text-gold-400"
-                        : "border-border bg-elevated text-subtle hover:text-white hover:border-border-strong"
+                        ? "border-gold-500/60 bg-gold-500/10"
+                        : "border-border bg-elevated hover:border-border-strong"
                     )}
                   >
-                    {f.label}
+                    <span
+                      style={{ fontFamily: f.cssVar, fontWeight: 700 }}
+                      className={cn("text-sm w-28 truncate", currentFont === f.value ? "text-gold-400" : "text-white")}
+                    >
+                      {f.label}
+                    </span>
+                    <span className="text-[9px] text-muted">{f.hint}</span>
                   </button>
                 ))}
               </div>
@@ -241,6 +248,107 @@ export function CaptionInspector({ caption, onChange, onClose }: Props) {
                   </button>
                 ))}
               </div>
+            </div>
+
+            <Divider />
+
+            {/* Background */}
+            <div>
+              <SectionLabel>Background</SectionLabel>
+              <div className="grid grid-cols-3 gap-1.5">
+                {([
+                  {
+                    id: "none",
+                    label: "None",
+                    icon: "✕",
+                    background_css: undefined,
+                    bg_padding: undefined,
+                  },
+                  {
+                    id: "pill",
+                    label: "Pill",
+                    icon: "◉",
+                    background_css: "rgba(0,0,0,0.8)",
+                    bg_padding: "4px 16px",
+                  },
+                  {
+                    id: "box",
+                    label: "Box",
+                    icon: "▬",
+                    background_css: "rgba(0,0,0,0.75)",
+                    bg_padding: "4px 8px",
+                  },
+                  {
+                    id: "gold",
+                    label: "Gold",
+                    icon: "★",
+                    background_css: "linear-gradient(90deg,#F0A500,#FFB923)",
+                    bg_padding: "4px 10px",
+                  },
+                  {
+                    id: "frost",
+                    label: "Frost",
+                    icon: "❄",
+                    background_css: "rgba(255,255,255,0.12)",
+                    bg_padding: "4px 10px",
+                  },
+                  {
+                    id: "shadow",
+                    label: "Shadow",
+                    icon: "◎",
+                    background_css: undefined,
+                    bg_padding: undefined,
+                  },
+                ] as const).map((opt) => {
+                  const isActive =
+                    opt.id === "none"
+                      ? !caption.background_css
+                      : opt.id === "shadow"
+                      ? !caption.background_css && (caption.stroke_width ?? 0) >= 8
+                      : caption.background_css === opt.background_css;
+                  return (
+                    <button
+                      key={opt.id}
+                      title={opt.label}
+                      onClick={() => {
+                        if (opt.id === "none") {
+                          onChange({ background_css: undefined, bg_padding: undefined });
+                        } else if (opt.id === "shadow") {
+                          onChange({
+                            background_css: undefined,
+                            bg_padding: undefined,
+                            stroke_color: "#000000",
+                            stroke_width: 10,
+                          });
+                        } else if (opt.id === "gold") {
+                          onChange({
+                            background_css: opt.background_css,
+                            bg_padding: opt.bg_padding,
+                            color: "#000000",
+                          });
+                        } else {
+                          onChange({
+                            background_css: opt.background_css,
+                            bg_padding: opt.bg_padding,
+                          });
+                        }
+                      }}
+                      className={cn(
+                        "flex flex-col items-center gap-0.5 rounded-lg border px-1.5 py-2 text-center transition-all",
+                        isActive
+                          ? "border-gold-500/60 bg-gold-500/10 text-gold-400"
+                          : "border-border bg-elevated text-subtle hover:text-white hover:border-border-strong"
+                      )}
+                    >
+                      <span className="text-sm leading-none">{opt.icon}</span>
+                      <span className="text-[9px] font-medium">{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-1.5 text-[9px] text-muted">
+                Frost uses backdrop-filter — may not show in all exports.
+              </p>
             </div>
 
             <Divider />

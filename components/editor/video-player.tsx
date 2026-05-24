@@ -218,7 +218,16 @@ export function VideoPlayer({
         const color         = currentCaption.color || "#FFFFFF";
         const fontSize      = currentCaption.font_size || 36;
         const fontWeight    = currentCaption.font_weight || 600;
-        const fontFamily    = `${currentCaption.font_family || "Inter"}, system-ui, sans-serif`;
+        const fontFamilyName = currentCaption.font_family || "Inter";
+        // Map human-readable names to CSS variables so Next.js-hosted fonts actually load
+        const FONT_VARS: Record<string, string> = {
+          "Inter":         "var(--font-inter)",
+          "Montserrat":    "var(--font-montserrat)",
+          "Oswald":        "var(--font-oswald)",
+          "Bebas Neue":    "var(--font-bebas-neue)",
+          "Space Grotesk": "var(--font-space-grotesk)",
+        };
+        const fontFamily = `${FONT_VARS[fontFamilyName] ?? fontFamilyName}, system-ui, sans-serif`;
         const animation     = currentCaption.animation || "fade";
         const textTransform = currentCaption.text_transform ?? "none";
         const letterSpacing = currentCaption.letter_spacing ?? 0;
@@ -296,12 +305,13 @@ export function VideoPlayer({
                   const future = playTime < wt.start;
                   return (
                     <span
-                      key={idx}
+                      // Key change on active triggers remount → fires one-shot CSS animation
+                      key={active ? `a-${idx}` : idx}
+                      className={active ? "wp-active" : undefined}
                       style={{
                         display:    "inline-block",
                         color:      active ? wordPopColor : past ? color : `${color}28`,
                         fontWeight: active ? 900 : fontWeight,
-                        // No transition — instant state change, no animation/pulse
                         opacity:    future ? 0.22 : 1,
                         textShadow: active ? `0 2px 8px rgba(0,0,0,0.9)` : undefined,
                         ...strokeStyle,
@@ -312,6 +322,16 @@ export function VideoPlayer({
                   );
                 })}
               </p>
+              <style jsx>{`
+                .wp-active {
+                  animation: wpIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+                }
+                @keyframes wpIn {
+                  0%   { transform: scale(0.65) translateY(5px); opacity: 0.2; }
+                  70%  { transform: scale(1.1); }
+                  100% { transform: scale(1) translateY(0); opacity: 1; }
+                }
+              `}</style>
             </div>
           );
         }
@@ -375,18 +395,31 @@ export function VideoPlayer({
                   const active = idx === activeIdx;
                   const past   = activeIdx >= 0 && idx < activeIdx;
                   return (
-                    <span key={idx} style={{
-                      display:    "inline-block",
-                      color:      active ? (effectiveEmphasis.color || "#F0A500") : past ? color : `${color}55`,
-                      fontWeight: active ? 900 : fontWeight,
-                      // No transition/animation — instant colour switch only
-                      ...strokeStyle,
-                    }}>
+                    <span
+                      // Key change on active → remount → one-shot scale-in
+                      key={active ? `ka-${idx}` : idx}
+                      className={active ? "ka-active" : undefined}
+                      style={{
+                        display:    "inline-block",
+                        color:      active ? (effectiveEmphasis.color || "#F0A500") : past ? color : `${color}55`,
+                        fontWeight: active ? 900 : fontWeight,
+                        ...strokeStyle,
+                      }}
+                    >
                       {wt.word}
                     </span>
                   );
                 })}
               </p>
+              <style jsx>{`
+                .ka-active {
+                  animation: kaIn 0.15s ease-out both;
+                }
+                @keyframes kaIn {
+                  from { transform: scale(0.88); opacity: 0.6; }
+                  to   { transform: scale(1);    opacity: 1; }
+                }
+              `}</style>
             </div>
           );
         }

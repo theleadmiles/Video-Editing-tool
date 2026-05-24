@@ -4,7 +4,7 @@ import { useState } from "react";
 import {
   Sparkles, Wand2, Languages, Trash2, Zap,
   MessageSquare, Loader2, ChevronDown, CheckCircle2,
-  Crosshair,
+  Crosshair, TrendingUp, Smile,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -16,6 +16,8 @@ interface Props {
   onUpdate: (updatedClips: TimelineClip[]) => void;
   /** If provided, auto-position runs face detection on this video element */
   videoRef?: React.RefObject<HTMLVideoElement | null>;
+  /** Called when viral hook finder returns a best-clip window */
+  onHookFound?: (clips: TimelineClip[], reason: string, startTime: number) => void;
 }
 
 const LANGUAGES = [
@@ -24,10 +26,10 @@ const LANGUAGES = [
   "Bengali", "Gujarati", "Marathi", "Tamil", "Telugu", "Urdu",
 ];
 
-type Op = "emphasis" | "remove_fillers" | "emotion_styling" | "correct" | "translate" | "auto_position";
+type Op = "emphasis" | "remove_fillers" | "emotion_styling" | "correct" | "translate" | "auto_position" | "hook" | "emoji";
 
 /** Panel that surfaces all AI caption operations in one place */
-export function CaptionAIPanel({ captions, onUpdate, videoRef }: Props) {
+export function CaptionAIPanel({ captions, onUpdate, videoRef, onHookFound }: Props) {
   const [running, setRunning] = useState<Op | null>(null);
   const [showLangs, setShowLangs] = useState(false);
   const [correctContext, setCorrectContext] = useState("");
@@ -48,7 +50,10 @@ export function CaptionAIPanel({ captions, onUpdate, videoRef }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clips: captions, options }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error ?? `Server error ${res.status}`);
+      }
       const { clips } = await res.json() as { clips: TimelineClip[] };
       onUpdate(clips);
       markDone(opKey);
@@ -57,8 +62,9 @@ export function CaptionAIPanel({ captions, onUpdate, videoRef }: Props) {
         options.remove_fillers ? "Filler words removed" :
         "Emotion styling applied"
       );
-    } catch {
-      toast.error("AI operation failed — check your OpenRouter key");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      toast.error(msg.length < 120 ? msg : "AI operation failed — check console for details");
     } finally {
       setRunning(null);
     }
@@ -73,13 +79,17 @@ export function CaptionAIPanel({ captions, onUpdate, videoRef }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clips: captions, target_language: lang }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error ?? `Server error ${res.status}`);
+      }
       const { clips } = await res.json() as { clips: TimelineClip[] };
       onUpdate(clips);
       markDone("translate");
       toast.success(`Translated to ${lang}`);
-    } catch {
-      toast.error("Translation failed");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      toast.error(msg.length < 120 ? msg : "Translation failed — check console");
     } finally {
       setRunning(null);
     }
@@ -94,13 +104,17 @@ export function CaptionAIPanel({ captions, onUpdate, videoRef }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clips: captions, context: correctContext }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error ?? `Server error ${res.status}`);
+      }
       const { clips } = await res.json() as { clips: TimelineClip[] };
       onUpdate(clips);
       markDone("correct");
       toast.success("Transcript corrected");
-    } catch {
-      toast.error("Correction failed");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      toast.error(msg.length < 120 ? msg : "Correction failed — check console");
     } finally {
       setRunning(null);
     }
@@ -147,6 +161,59 @@ export function CaptionAIPanel({ captions, onUpdate, videoRef }: Props) {
       toast.success(`Captions repositioned to ${facePosY < 50 ? "top" : "bottom"} (clear of faces)`);
     } catch {
       toast.error("Auto-position failed");
+    } finally {
+      setRunning(null);
+    }
+  }
+
+  async function runHook() {
+    setRunning("hook");
+    try {
+      const res = await fetch("/api/captions/hook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clips: captions }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error ?? `Server error ${res.status}`);
+      }
+      const { clips, reason, start_time } = await res.json() as {
+        clips: TimelineClip[];
+        reason: string;
+        start_time: number;
+        end_time: number;
+      };
+      markDone("hook");
+      onHookFound?.(clips, reason, start_time);
+      toast.success(`Hook found: ${reason}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      toast.error(msg.length < 120 ? msg : "Hook detection failed — check console");
+    } finally {
+      setRunning(null);
+    }
+  }
+
+  async function runEmoji() {
+    setRunning("emoji");
+    try {
+      const res = await fetch("/api/captions/emoji", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clips: captions }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error ?? `Server error ${res.status}`);
+      }
+      const { clips } = await res.json() as { clips: TimelineClip[] };
+      onUpdate(clips);
+      markDone("emoji");
+      toast.success("Emojis added to captions");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      toast.error(msg.length < 120 ? msg : "Emoji generation failed — check console");
     } finally {
       setRunning(null);
     }
@@ -274,6 +341,30 @@ export function CaptionAIPanel({ captions, onUpdate, videoRef }: Props) {
           done={completedOps.has("auto_position")}
           disabled={busy || noCaptions}
           onClick={runAutoPosition}
+        />
+
+        {/* Viral Hook Finder */}
+        <AIButton
+          icon={TrendingUp}
+          label="Viral Hook Finder"
+          description="Find the best 15s clip for maximum impact"
+          op="hook"
+          running={running}
+          done={completedOps.has("hook")}
+          disabled={busy || noCaptions}
+          onClick={runHook}
+        />
+
+        {/* Auto Emoji */}
+        <AIButton
+          icon={Smile}
+          label="Auto Emoji"
+          description="Add contextual emoji to each caption"
+          op="emoji"
+          running={running}
+          done={completedOps.has("emoji")}
+          disabled={busy || noCaptions}
+          onClick={runEmoji}
         />
 
       </div>

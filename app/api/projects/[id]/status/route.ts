@@ -82,19 +82,31 @@ export async function GET(
             let captions        = buildCaptionClips(words, aData.text ?? "", totalDuration, sentimentMap);
             const { videoUrl, aspectRatio, workspaceId, languageName } = td!._pending!;
 
-            // ── Auto-translate to English when:
-            //    • User selected "English" as the language, OR
-            //    • Auto-detect was used (languageName undefined/null)
-            //   AND AssemblyAI returned a non-English language code.
-            const detectedLang   = (aData as { language_code?: string }).language_code ?? "en";
+            // ── Auto-translate to English when the user wanted English
+            //    and the transcript contains non-Latin script characters.
+            //
+            //    Two-signal detection (both checked, either triggers):
+            //    1. Unicode character ranges in actual transcript text — most reliable
+            //       (Devanagari, Arabic, CJK, Hiragana, Katakana, Thai, etc.)
+            //    2. AssemblyAI language_code != "en" — secondary check when available
+            //
+            //    This replaces the old language_code-only check which silently missed
+            //    cases where AssemblyAI omits the field.
+            const detectedLang   = (aData as { language_code?: string }).language_code;
+            const fullText       = captions.map((c) => c.text).join(" ");
+            const hasNonLatin    = /[ऀ-ॿ؀-ۿ一-鿿぀-ゟ゠-ヿ฀-๿ঀ-৿઀-૿଀-୿ఀ-౿]/.test(fullText);
+            const langCodeNonEn  = detectedLang ? detectedLang !== "en" : false;
             const wantedEnglish  = !languageName || languageName === "English";
-            const isNonEnglish   = detectedLang !== "en";
-            if (wantedEnglish && isNonEnglish) {
+
+            if (wantedEnglish && (hasNonLatin || langCodeNonEn)) {
+              console.log(`[status] Non-English detected (script=${hasNonLatin}, code=${detectedLang}) — translating to English`);
               try {
                 const translated = await translateClipsToEnglish(captions);
                 if (translated) captions = translated;
+                else console.warn("[status] translateClipsToEnglish returned null — keeping original");
               } catch (e) {
-                console.warn("[status] auto-translate failed — keeping original text:", e);
+                console.error("[status] auto-translate threw:", e);
+                // Non-fatal — keep original text rather than blocking the whole job
               }
             }
 

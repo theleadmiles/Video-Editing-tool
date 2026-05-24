@@ -25,6 +25,7 @@ import { ClipEffectsPanel } from "./clip-effects-panel";
 import { ContextMenu, type ContextMenuItem } from "@/components/ui/context-menu";
 import { CAPTION_STYLES, findStyle, applyStyleToClip } from "@/lib/caption-styles";
 import { DEFAULT_EMPHASIS_STYLE, type EmphasisStyle } from "@/lib/emphasis-styles";
+import { rechunkCaptions, shiftCaptions, mergeCaptions, splitCaption } from "@/lib/caption-utils";
 import {
   ChevronLeft, Download, Share2,
   Play, Pause, Square, Film, Mic2,
@@ -36,7 +37,7 @@ import {
   Keyboard, Image as ImageIcon, Loader2,
   Check as CheckIcon, Undo2, Redo2,
   Replace as ReplaceIcon, ZoomIn, ZoomOut,
-  Scissors as ScissorsIcon,
+  Scissors as ScissorsIcon, GitMerge, ArrowUpDown,
   PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import type { Project, TimelineData, TimelineClip } from "@/types";
@@ -221,6 +222,11 @@ export function ProjectEditor({ project }: { project: Project }) {
   const [selectedCaptionId, setSelectedCaptionId] = useState<string | null>(null);
   const [showFindReplace, setShowFindReplace] = useState(false);
   const [activeCaptionStyleId, setActiveCaptionStyleId] = useState<string | null>(null);
+
+  // Caption tools state
+  const [captionDensity, setCaptionDensity] = useState(5); // words per chunk
+  const [captionShift, setCaptionShift] = useState(0);     // shift offset in seconds
+  const [showShiftPanel, setShowShiftPanel] = useState(false);
 
   // Timeline zoom (50% – 300%)
   const [timelineZoom, setTimelineZoom] = useState(100);
@@ -537,6 +543,30 @@ export function ProjectEditor({ project }: { project: Project }) {
     a.click();
     URL.revokeObjectURL(url);
     toast.success("SRT downloaded!");
+  }
+
+  function downloadVTT() {
+    if (!editedCaptions.length) { toast.error("No captions to export"); return; }
+    function toVTTTime(seconds: number) {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      const ms = Math.round((seconds % 1) * 1000);
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(ms).padStart(3, "0")}`;
+    }
+    const vtt = "WEBVTT\n\n" + editedCaptions.map((cap, i) => {
+      const start = cap.start_time ?? 0;
+      const end = start + (cap.duration ?? 3);
+      return `${i + 1}\n${toVTTTime(start)} --> ${toVTTTime(end)}\n${cap.text}\n`;
+    }).join("\n");
+    const blob = new Blob([vtt], { type: "text/vtt" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${project.title || "captions"}.vtt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("VTT downloaded!");
   }
 
   // ── Voice ──
@@ -1302,6 +1332,27 @@ export function ProjectEditor({ project }: { project: Project }) {
                       SRT
                     </button>
                     <button
+                      onClick={downloadVTT}
+                      disabled={editedCaptions.length === 0}
+                      title="Download VTT subtitle file"
+                      className="flex items-center gap-1 rounded-lg border border-border bg-elevated px-2 h-7 text-[11px] text-subtle hover:text-white hover:border-gold-500/30 transition-all disabled:opacity-40"
+                    >
+                      VTT
+                    </button>
+                    <button
+                      onClick={() => setShowShiftPanel((v) => !v)}
+                      disabled={editedCaptions.length === 0}
+                      title="Shift all captions by ±N seconds"
+                      className={cn(
+                        "flex items-center justify-center rounded-lg border h-7 w-7 transition-all disabled:opacity-40",
+                        showShiftPanel
+                          ? "border-gold-500/50 bg-gold-500/10 text-gold-400"
+                          : "border-border bg-elevated text-muted hover:text-white hover:border-gold-500/30"
+                      )}
+                    >
+                      <ArrowUpDown className="h-3.5 w-3.5" />
+                    </button>
+                    <button
                       onClick={() => setShowFindReplace(true)}
                       disabled={editedCaptions.length === 0}
                       title="Find & replace text"
@@ -1310,6 +1361,33 @@ export function ProjectEditor({ project }: { project: Project }) {
                       <ReplaceIcon className="h-3.5 w-3.5" />
                     </button>
                   </div>
+
+                  {/* Shift panel — inline below toolbar */}
+                  {showShiftPanel && (
+                    <div className="flex items-center gap-2 px-2 py-1.5 border-b border-border bg-elevated/40">
+                      <span className="text-[10px] text-muted flex-shrink-0">Shift:</span>
+                      <input
+                        type="number"
+                        step={0.1}
+                        value={captionShift}
+                        onChange={(e) => setCaptionShift(Number(e.target.value))}
+                        placeholder="±0.0s"
+                        className="flex-1 rounded border border-border bg-surface px-2 py-0.5 text-[11px] text-white focus:border-gold-500/50 focus:outline-none min-w-0"
+                      />
+                      <button
+                        onClick={() => {
+                          if (captionShift === 0) return;
+                          setEditedCaptions(shiftCaptions(editedCaptions, captionShift));
+                          setCaptionShift(0);
+                          setShowShiftPanel(false);
+                          toast.success(`Captions shifted by ${captionShift > 0 ? "+" : ""}${captionShift}s`);
+                        }}
+                        className="rounded border border-gold-500/30 bg-gold-500/10 px-2 py-0.5 text-[10px] text-gold-400 hover:bg-gold-500/20 transition-all flex-shrink-0"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  )}
 
                   {/* ── Caption count + live indicator ── */}
                   <div className="flex items-center justify-between px-3 py-1.5 flex-shrink-0">
@@ -1364,11 +1442,47 @@ export function ProjectEditor({ project }: { project: Project }) {
                             <span className="text-[10px] font-mono text-muted">
                               {(cap.start_time + cap.duration).toFixed(1)}s
                             </span>
+                            {cap.speaker && (
+                              <span
+                                className="text-[8px] font-bold px-1 py-0.5 rounded-sm"
+                                style={{ backgroundColor: cap.speaker_color ?? "#ffffff22", color: cap.speaker_color ?? "#fff" }}
+                              >
+                                {cap.speaker}
+                              </span>
+                            )}
                             {active && (
                               <span className="ml-auto text-[9px] text-gold-500 font-medium flex items-center gap-0.5">
                                 <span className="h-1 w-1 rounded-full bg-gold-500 animate-pulse" />
                                 playing
                               </span>
+                            )}
+                            {/* Split at playhead — only shown when playhead is inside this clip */}
+                            {playTime > cap.start_time && playTime < cap.start_time + cap.duration && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditedCaptions(splitCaption(editedCaptions, i, playTime));
+                                }}
+                                title="Split at playhead"
+                                aria-label="Split caption at playhead"
+                                className="opacity-0 group-hover:opacity-100 text-muted hover:text-gold-400 transition-all flex-shrink-0"
+                              >
+                                <ScissorsIcon className="h-2.5 w-2.5" />
+                              </button>
+                            )}
+                            {/* Merge with next caption */}
+                            {i < editedCaptions.length - 1 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditedCaptions(mergeCaptions(editedCaptions, i));
+                                }}
+                                title="Merge with next caption"
+                                aria-label="Merge with next caption"
+                                className="opacity-0 group-hover:opacity-100 text-muted hover:text-gold-400 transition-all flex-shrink-0"
+                              >
+                                <GitMerge className="h-2.5 w-2.5" />
+                              </button>
                             )}
                             <button
                               onClick={(e) => {
@@ -1993,6 +2107,60 @@ export function ProjectEditor({ project }: { project: Project }) {
                 </Button>
               </div>
 
+              {/* Caption density + rechunk */}
+              {editedCaptions.length > 0 && (
+                <div className="rounded-xl border border-border bg-elevated/60 p-3 space-y-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Caption Density</p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-muted">{captionDensity} words/clip</span>
+                    <button
+                      onClick={() => {
+                        const rechunked = rechunkCaptions(editedCaptions, captionDensity);
+                        if (rechunked === editedCaptions) {
+                          toast.error("Word timings not available — upload a new video to rechunk");
+                          return;
+                        }
+                        setEditedCaptions(rechunked);
+                        toast.success(`Rechunked to ${captionDensity} words/clip`);
+                      }}
+                      className="text-[10px] text-gold-500 hover:text-gold-400 font-medium"
+                    >Apply</button>
+                  </div>
+                  <input type="range" min={1} max={10} step={1} value={captionDensity}
+                    onChange={(e) => setCaptionDensity(Number(e.target.value))}
+                    className="w-full accent-gold-500 h-1 rounded-full" />
+                  <div className="flex justify-between text-[9px] text-muted">
+                    <span>Punchy (1)</span><span>Standard (5)</span><span>Long (10)</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Shift all captions */}
+              {editedCaptions.length > 0 && (
+                <div className="rounded-xl border border-border bg-elevated/60 p-3 space-y-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Shift Timing</p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number" step={0.1}
+                      value={captionShift}
+                      onChange={(e) => setCaptionShift(Number(e.target.value))}
+                      placeholder="±0.0s"
+                      className="flex-1 rounded-lg border border-border bg-surface px-2 py-1 text-xs text-white focus:border-gold-500/50 focus:outline-none"
+                    />
+                    <button
+                      onClick={() => {
+                        if (captionShift === 0) return;
+                        setEditedCaptions(shiftCaptions(editedCaptions, captionShift));
+                        setCaptionShift(0);
+                        toast.success(`Captions shifted by ${captionShift > 0 ? "+" : ""}${captionShift}s`);
+                      }}
+                      className="rounded-lg bg-gold-500/10 border border-gold-500/30 px-2.5 py-1 text-[11px] text-gold-400 hover:bg-gold-500/20 transition-all"
+                    >Shift</button>
+                  </div>
+                  <p className="text-[9px] text-muted">e.g. +0.5 = delay all 0.5s</p>
+                </div>
+              )}
+
               {/* Quick style controls — font size + colour applied to ALL captions */}
               {editedCaptions.length > 0 && (
                 <div className="rounded-xl border border-border bg-elevated/60 p-3 space-y-3">
@@ -2134,6 +2302,11 @@ export function ProjectEditor({ project }: { project: Project }) {
                       setEditedCaptions(updated);
                       toast.success("Captions updated — click Save to keep changes");
                     }}
+                    onHookFound={(clips, reason, startTime) => {
+                      toast.success(`Best hook found at ${startTime.toFixed(1)}s: ${reason}`);
+                      seekTo(startTime / totalDuration);
+                      setActiveTab("captions");
+                    }}
                   />
                 </div>
               )}
@@ -2182,6 +2355,11 @@ export function ProjectEditor({ project }: { project: Project }) {
                   <button onClick={downloadSRT}
                     className="w-full flex items-center justify-between rounded-lg border border-border p-2 text-xs text-subtle hover:border-gold-500/30 hover:text-white transition-all">
                     <span>Export SRT</span>
+                    <Download className="h-3 w-3" />
+                  </button>
+                  <button onClick={downloadVTT}
+                    className="w-full flex items-center justify-between rounded-lg border border-border p-2 text-xs text-subtle hover:border-gold-500/30 hover:text-white transition-all">
+                    <span>Export VTT</span>
                     <Download className="h-3 w-3" />
                   </button>
                 </div>
